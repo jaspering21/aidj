@@ -1,0 +1,494 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Deep space dark - almost black with subtle blue */
+  --bg-void: #010104;
+  --bg-deep: #02020a;
+  --bg-primary: #050510;
+  --bg-secondary: #08081a;
+  --bg-elevated: rgba(12, 12, 28, 0.4);
+
+  /* Muted neon - softer, more ambient */
+  --accent-primary: #00d4ff;
+  --accent-secondary: #00ff88;
+  --accent-tertiary: #a855f7;
+  --accent-muted: rgba(0, 212, 255, 0.15);
+  --accent-glow: rgba(0, 212, 255, 0.08);
+
+  /* Text - softer for less eye strain */
+  --text-primary: #c8d4e8;
+  --text-secondary: #6b7a9a;
+  --text-muted: #3d4a66;
+
+  /* Ambient glow colors - diffused */
+  --glow-ambient-cyan: rgba(0, 212, 255, 0.06);
+  --glow-ambient-green: rgba(0, 255, 136, 0.05);
+  --glow-ambient-purple: rgba(168, 85, 247, 0.04);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* ============================================
+   AMBIENT GRID BACKGROUND - Subtle dotted matrix
+   ============================================ */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 30%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse 80% 60% at 80% 80%, rgba(168, 85, 247, 0.02) 0%, transparent 40%),
+    linear-gradient(180deg, #010104 0%, #02020a 50%, #050510 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Dotted grid - very subtle */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle at center, rgba(0, 212, 255, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center center;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+  animation: grid-drift 60s linear infinite;
+}
+
+@keyframes grid-drift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(32px, 32px); }
+}
+
+/* Main content */
+.main-content {
+  position: relative;
+  z-index: 10;
+}
+
+/* ============================================
+   TYPOGRAPHY - Clean, minimal, legible
+   ============================================ */
+
+* {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace !important;
+}
+
+.time-display {
+  font-size: 3rem;
+  font-weight: 200;
+  letter-spacing: 0.1em;
+  color: var(--text-primary);
+  opacity: 0.95;
+  animation: text-breathe 4s ease-in-out infinite;
+}
+
+@keyframes text-breathe {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+.hud-label {
+  font-size: 0.55rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+/* ============================================
+   AMBIENT PANELS - No borders, soft separation
+   via subtle background shifts and depth
+   ============================================ */
+
+.glass-panel {
+  background: var(--bg-elevated);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 0.75rem;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.5s ease;
+}
+
+/* Subtle ambient glow on hover */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 40% at 30% 0%, var(--glow-ambient-cyan) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
+}
+
+.glass-panel:hover::before {
+  opacity: 1;
+}
+
+/* ============================================
+   STATUS - Breathing ambient lights
+   ============================================ */
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.status-dot.on-air {
+  background: var(--accent-secondary);
+  animation: breathe 3s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--glow-ambient-green);
+    opacity: 0.8;
+  }
+  50% {
+    box-shadow: 0 0 8px 2px var(--glow-ambient-green);
+    opacity: 1;
+  }
+}
+
+.status-dot.standby {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.on-air-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 1rem;
+  background: var(--bg-elevated);
+  animation: badge-ambient 3s ease-in-out infinite;
+}
+
+@keyframes badge-ambient {
+  0%, 100% {
+    box-shadow: 0 0 15px var(--glow-ambient-green);
+  }
+  50% {
+    box-shadow: 0 0 25px var(--glow-ambient-green);
+  }
+}
+
+.on-air-badge .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-secondary);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ============================================
+   CONSOLE CONTROLS - Minimal, device-like
+   ============================================ */
+
+.console-panel {
+  background: var(--bg-elevated);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 1rem;
+  padding: 1.25rem 1.5rem;
+  position: relative;
+}
+
+.console-btn {
+  background: transparent;
+  border: none;
+  border-radius: 0.5rem;
+  color: var(--text-secondary);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.console-btn:hover {
+  color: var(--text-primary);
+  background: var(--accent-muted);
+}
+
+.console-btn:active {
+  color: var(--accent-primary);
+  transform: scale(0.95);
+}
+
+/* Play button - hero element, no harsh borders */
+.console-btn-play {
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  border-radius: 50%;
+  width: 3.5rem;
+  height: 3.5rem;
+  color: var(--text-secondary);
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.console-btn-play:hover {
+  border-color: var(--accent-muted);
+  color: var(--text-primary);
+  box-shadow: 0 0 30px var(--glow-ambient-green);
+}
+
+.console-btn-play.playing {
+  color: var(--accent-secondary);
+  box-shadow: 0 0 20px var(--glow-ambient-green);
+}
+
+/* ============================================
+   PROGRESS - Clean line, ambient glow
+   ============================================ */
+
+.progress-groove {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 2px;
+  height: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
+  border-radius: 2px;
+  height: 100%;
+  position: relative;
+  animation: progress-glow 2s ease-in-out infinite;
+}
+
+@keyframes progress-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--glow-ambient-green);
+    opacity: 0.9;
+  }
+  50% {
+    box-shadow: 0 0 15px var(--glow-ambient-cyan);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   CHAT - Floating messages, no hard borders
+   ============================================ */
+
+.chat-panel {
+  background: var(--bg-elevated);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 0.75rem;
+  position: relative;
+}
+
+.chat-bubble {
+  padding: 0.6rem 0.875rem;
+  border-radius: 0.625rem;
+  position: relative;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.chat-bubble-user {
+  background: var(--accent-muted);
+  margin-left: 0.5rem;
+}
+
+.chat-bubble-aidy {
+  background: rgba(0, 255, 136, 0.06);
+  margin-right: 0.5rem;
+}
+
+.chat-role {
+  font-size: 0.5rem;
+  letter-spacing: 0.15em;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+  opacity: 0.8;
+}
+
+.chat-role.you { color: var(--accent-primary); }
+.chat-role.dj { color: var(--accent-secondary); }
+
+/* ============================================
+   INPUT - Minimal, line-style
+   ============================================ */
+
+.input-holo {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 0;
+  color: var(--text-primary);
+  caret-color: var(--accent-primary);
+  padding: 0.5rem 0;
+  transition: border-color 0.3s ease;
+}
+
+.input-holo:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: none;
+}
+
+.input-holo::placeholder {
+  color: var(--text-muted);
+}
+
+/* ============================================
+   PLAYLIST - Clean list, subtle active state
+   ============================================ */
+
+.playlist-panel {
+  background: var(--bg-elevated);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 0.75rem;
+  overflow-y: auto;
+}
+
+.playlist-item {
+  padding: 0.75rem 0.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.playlist-item:last-child {
+  border-bottom: none;
+}
+
+.playlist-item:hover {
+  background: var(--accent-muted);
+}
+
+.playlist-item-active {
+  background: rgba(0, 255, 136, 0.04);
+}
+
+/* Sound bars - minimal animation */
+.sound-bar {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 10px;
+}
+
+.sound-bar span {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent-secondary);
+  animation: sound-wave 0.6s ease-in-out infinite alternate;
+}
+
+.sound-bar span:nth-child(1) { animation-delay: 0s; height: 3px; }
+.sound-bar span:nth-child(2) { animation-delay: 0.15s; height: 6px; }
+.sound-bar span:nth-child(3) { animation-delay: 0.3s; height: 4px; }
+
+@keyframes sound-wave {
+  0% { transform: scaleY(0.4); opacity: 0.5; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/* ============================================
+   QR - Ambient scanner
+   ============================================ */
+
+.qr-container {
+  background: transparent;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  position: relative;
+}
+
+/* ============================================
+   SCROLLBAR - Minimal line style
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 3px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 2px;
+  opacity: 0.3;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-primary);
+}
+
+/* ============================================
+   UTILITIES - Subtle glow effects
+   ============================================ */
+
+.text-glow-green {
+  text-shadow: 0 0 12px var(--glow-ambient-green);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 12px var(--glow-ambient-cyan);
+}
+
+/* ============================================
+   SPACING UTILITIES - Increased breathing room
+   ============================================ */
+
+.glass-panel {
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.chat-panel {
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.playlist-panel {
+  padding: 0.75rem;
+  max-height: 12rem;
+}
+
+/* ============================================
+   TRANSITIONS - Smooth, subtle
+   ============================================ */
+
+button, input, .glass-panel, .chat-panel, .playlist-panel {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
