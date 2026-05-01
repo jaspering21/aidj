@@ -1,82 +1,10 @@
 'use server'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
 import https from 'https'
-
-const NETEASE_API = 'music.163.com'
-const SESSION_FILE = join(homedir(), '.aidj', 'netease_session.json')
-
-interface NeteaseSession {
-  cookie: string
-  username: string
-  userId: number
-  expiresAt: number
-}
-
-function getStoredSession(): NeteaseSession | null {
-  try {
-    if (existsSync(SESSION_FILE)) {
-      const data = JSON.parse(readFileSync(SESSION_FILE, 'utf-8'))
-      if (data.expiresAt > Date.now()) {
-        return data
-      }
-    }
-    const secretsPath = join(homedir(), '.aidj', 'secrets.json')
-    if (existsSync(secretsPath)) {
-      const secrets = JSON.parse(readFileSync(secretsPath, 'utf-8'))
-      if (secrets.netease_cookie) {
-        return {
-          cookie: secrets.netease_cookie,
-          username: secrets.netease_nickname || 'cached',
-          userId: parseInt(secrets.netease_cookie.match(/userId=(\d+)/)?.[1] || '0'),
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
-        }
-      }
-    }
-  } catch { }
-  return null
-}
-
-function saveSession(session: NeteaseSession) {
-  try {
-    const dir = join(homedir(), '.aidj')
-    if (!existsSync(dir)) {
-      const { mkdirSync } = require('fs')
-      mkdirSync(dir, { recursive: true })
-    }
-    writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2))
-
-    // Update secrets.json
-    const secretsPath = join(homedir(), '.aidj', 'secrets.json')
-    let secrets: Record<string, string> = {}
-    if (existsSync(secretsPath)) {
-      try {
-        secrets = JSON.parse(readFileSync(secretsPath, 'utf-8'))
-      } catch { }
-    }
-    secrets.netease_cookie = session.cookie
-    secrets.netease_nickname = session.username
-    writeFileSync(secretsPath, JSON.stringify(secrets, null, 2))
-  } catch (e) {
-    console.error('Failed to save session:', e)
-  }
-}
-
-function httpRequest(options: any, postData?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res: any) => {
-      let data = ''
-      res.on('data', (chunk: string) => data += chunk)
-      res.on('end', () => resolve(data))
-    })
-    req.on('error', reject)
-    if (postData) req.write(postData)
-    req.end()
-  })
-}
+import { getSecureSession, saveSession, clearSession, NETEASE_API, httpRequest, NeteaseSession } from '@/lib/netease'
+import { PLAYLIST_ID, THIRTY_DAYS_MS } from '@/lib/netease'
+import { safeError, validateEnum, validateStringLength } from '@/lib/errors'
 
 async function validateCookie(cookie: string): Promise<{ valid: boolean; nickname?: string; userId?: number }> {
   // First try to extract userId from cookie
@@ -108,12 +36,12 @@ async function validateCookie(cookie: string): Promise<{ valid: boolean; nicknam
   // Try calling playlist API to verify cookie is valid
   const plOptions = {
     hostname: NETEASE_API,
-    path: '/api/playlist/detail?id=2205555594&offset=0&total=true&limit=1',
+    path: `/api/playlist/detail?id=${PLAYLIST_ID}&offset=0&total=true&limit=1`,
     method: 'GET',
     headers: {
       'Cookie': cookie,
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      'Referer': 'https://music.163.com/playlist?id=2205555594'
+      'Referer': `https://music.163.com/playlist?id=${PLAYLIST_ID}`
     }
   }
   try {
@@ -158,24 +86,30 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { action, cookie, key } = body
 
+  // Validate action enum
+  if (!validateEnum(action, ['validate', 'login', 'logout', 'qrKey', 'qrCheck', 'get_cookie_help'])) {
+    return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
+  }
+
   switch (action) {
     case 'validate': {
-      const session = getStoredSession()
+      const session = getSecureSession()
       if (!session) {
-        return NextResponse.json({ success: true, data: { valid: false, reason: 'no_session' } })
+        return NextResponse.json({ success: true, data: { valid: false, reason: 'expired' } })
       }
       const result = await validateCookie(session.cookie)
       if (result.valid) {
         return NextResponse.json({ success: true, data: { valid: true, nickname: result.nickname } })
       }
       // Clear invalid session
-      try { require('fs').unlinkSync(SESSION_FILE) } catch { }
+      clearSession()
       return NextResponse.json({ success: true, data: { valid: false, reason: 'expired' } })
     }
 
     case 'login': {
-      if (!cookie || typeof cookie !== 'string') {
-        return NextResponse.json({ success: false, error: 'Cookie required' }, { status: 400 })
+      // Validate cookie - must be string with reasonable length
+      if (!validateStringLength(cookie, 10, 2000)) {
+        return NextResponse.json(safeError('Cookie required', 400), { status: 400 })
       }
 
       // Validate the cookie
@@ -195,7 +129,7 @@ export async function POST(request: NextRequest) {
         cookie,
         username: result.nickname || 'User',
         userId: result.userId || 0,
-        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
+        expiresAt: Date.now() + THIRTY_DAYS_MS
       }
       saveSession(session)
 
@@ -203,7 +137,7 @@ export async function POST(request: NextRequest) {
     }
 
     case 'logout': {
-      try { require('fs').unlinkSync(SESSION_FILE) } catch { }
+      clearSession()
       return NextResponse.json({ success: true })
     }
 
@@ -245,13 +179,15 @@ export async function POST(request: NextRequest) {
         }
         return NextResponse.json({ success: false, error: 'Failed to get QR key', detail: json }, { status: 500 })
       } catch (e) {
-        return NextResponse.json({ success: false, error: String(e) }, { status: 500 })
+        console.error('QR check error:', e)
+        return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
       }
     }
 
     case 'qrCheck': {
       // Check QR code scan status
-      if (!key) {
+      // Validate key - must be string with reasonable length
+      if (!validateStringLength(key, 10, 100)) {
         return NextResponse.json({ success: false, error: 'key required' }, { status: 400 })
       }
       const timestamp = Date.now()
@@ -279,7 +215,8 @@ export async function POST(request: NextRequest) {
           }
         })
       } catch (e) {
-        return NextResponse.json({ success: false, error: String(e) }, { status: 500 })
+        console.error('QR check error:', e)
+        return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
       }
     }
 

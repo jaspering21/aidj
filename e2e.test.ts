@@ -15,8 +15,8 @@ test.describe('AIDJ Music Agent - Complete Test Suite', () => {
     await page.goto('http://localhost:3000', { waitUntil: 'domcontentloaded', timeout: 15000 });
     await page.waitForSelector('text=DATE', { timeout: 15000 });
 
-    const body = await page.textContent('body');
-    console.log('Body preview:', body?.substring(0, 80));
+    const body = await page.textContent('body') ?? '';
+    console.log('Body preview:', body.substring(0, 80));
 
     // 2. Check grid widgets (new HUD style)
     console.log('\n=== Test 2: HUD Widgets ===');

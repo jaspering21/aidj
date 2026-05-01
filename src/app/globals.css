@@ -1,31 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Deep space dark - almost black with subtle blue */
-  --bg-void: #010104;
-  --bg-deep: #02020a;
-  --bg-primary: #050510;
-  --bg-secondary: #08081a;
-  --bg-elevated: rgba(12, 12, 28, 0.4);
+  /* Deep space void */
+  --void-black: #050508;
+  --deep-space: #080810;
+  --panel-bg: rgba(10, 10, 18, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.02);
+  --glass-border: rgba(255, 255, 255, 0.05);
 
-  /* Muted neon - softer, more ambient */
-  --accent-primary: #00d4ff;
-  --accent-secondary: #00ff88;
-  --accent-tertiary: #a855f7;
-  --accent-muted: rgba(0, 212, 255, 0.15);
-  --accent-glow: rgba(0, 212, 255, 0.08);
+  /* Soft neon - desaturated, diffused */
+  --neon-cyan: rgba(0, 245, 255, 0.7);
+  --neon-blue: rgba(77, 124, 255, 0.6);
+  --neon-purple: rgba(168, 85, 247, 0.5);
+  --neon-magenta: rgba(244, 114, 182, 0.4);
+  --neon-green: rgba(16, 185, 129, 0.6);
 
-  /* Text - softer for less eye strain */
-  --text-primary: #c8d4e8;
-  --text-secondary: #6b7a9a;
-  --text-muted: #3d4a66;
+  /* Ambient light sources */
+  --light-primary: rgba(0, 245, 255, 0.12);
+  --light-secondary: rgba(168, 85, 247, 0.08);
+  --light-tertiary: rgba(244, 114, 182, 0.05);
 
-  /* Ambient glow colors - diffused */
-  --glow-ambient-cyan: rgba(0, 212, 255, 0.06);
-  --glow-ambient-green: rgba(0, 255, 136, 0.05);
-  --glow-ambient-purple: rgba(168, 85, 247, 0.04);
+  /* Text - low contrast */
+  --text-primary: rgba(232, 234, 240, 0.85);
+  --text-secondary: rgba(180, 185, 200, 0.5);
+  --text-muted: rgba(120, 125, 140, 0.35);
 }
 
 * {
@@ -33,9 +35,9 @@
 }
 
 body {
-  background: var(--bg-void);
+  background: var(--void-black);
   color: var(--text-primary);
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-family: 'IBM Plex Mono', monospace;
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
@@ -43,343 +45,544 @@ body {
 }
 
 /* ============================================
-   AMBIENT GRID BACKGROUND - Subtle dotted matrix
+   GLOBAL AMBIENT LIGHT LAYERS
    ============================================ */
 
+/* Primary ambient light - behind clock */
+.ambient-light-primary {
+  position: fixed;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 245, 255, 0.08) 0%,
+    rgba(0, 245, 255, 0.04) 30%,
+    transparent 70%
+  );
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  pointer-events: none;
+  z-index: 0;
+  animation: ambient-breathe 8s ease-in-out infinite;
+}
+
+/* Secondary purple light */
+.ambient-light-secondary {
+  position: fixed;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(168, 85, 247, 0.06) 0%,
+    rgba(168, 85, 247, 0.02) 40%,
+    transparent 70%
+  );
+  top: 30%;
+  right: 10%;
+  pointer-events: none;
+  z-index: 0;
+  animation: ambient-breathe 10s ease-in-out infinite reverse;
+}
+
+/* Tertiary warm accent */
+.ambient-light-tertiary {
+  position: fixed;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(244, 114, 182, 0.04) 0%,
+    transparent 60%
+  );
+  bottom: 20%;
+  left: 5%;
+  pointer-events: none;
+  z-index: 0;
+  animation: ambient-breathe 12s ease-in-out infinite;
+}
+
+@keyframes ambient-breathe {
+  0%, 100% {
+    opacity: 0.6;
+    transform: translate(-50%, -60%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -60%) scale(1.1);
+  }
+}
+
+/* Dot Matrix Grid - very subtle */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background:
-    radial-gradient(ellipse 100% 80% at 50% 30%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse 80% 60% at 80% 80%, rgba(168, 85, 247, 0.02) 0%, transparent 40%),
-    linear-gradient(180deg, #010104 0%, #02020a 50%, #050510 100%);
+  background-image:
+    radial-gradient(circle at center, rgba(0, 245, 255, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
   pointer-events: none;
-  z-index: 0;
+  z-index: 1;
+  opacity: 0.4;
 }
 
-/* Dotted grid - very subtle */
+/* Noise texture overlay */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: radial-gradient(circle at center, rgba(0, 212, 255, 0.08) 1px, transparent 1px);
-  background-size: 32px 32px;
-  background-position: center center;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.03;
   pointer-events: none;
-  z-index: 0;
-  opacity: 0.4;
-  animation: grid-drift 60s linear infinite;
+  z-index: 2;
 }
 
-@keyframes grid-drift {
-  0% { transform: translate(0, 0); }
-  100% { transform: translate(32px, 32px); }
+/* Scanlines - very subtle */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.015) 3px,
+    rgba(0, 0, 0, 0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
 }
 
-/* Main content */
+/* Main content layer */
 .main-content {
   position: relative;
   z-index: 10;
 }
 
 /* ============================================
-   TYPOGRAPHY - Clean, minimal, legible
+   TYPOGRAPHY
    ============================================ */
 
-* {
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace !important;
+.font-display {
+  font-family: 'Orbitron', sans-serif;
 }
 
 .time-display {
-  font-size: 3rem;
-  font-weight: 200;
-  letter-spacing: 0.1em;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.12em;
   color: var(--text-primary);
-  opacity: 0.95;
-  animation: text-breathe 4s ease-in-out infinite;
-}
-
-@keyframes text-breathe {
-  0%, 100% { opacity: 0.85; }
-  50% { opacity: 1; }
 }
 
 .hud-label {
+  font-family: 'IBM Plex Mono', monospace;
   font-size: 0.55rem;
-  letter-spacing: 0.25em;
+  letter-spacing: 0.35em;
   text-transform: uppercase;
   color: var(--text-muted);
-  font-weight: 500;
-  opacity: 0.7;
+  font-weight: 400;
 }
 
 /* ============================================
-   AMBIENT PANELS - No borders, soft separation
-   via subtle background shifts and depth
+   PANELS - Seamless, no borders
    ============================================ */
 
 .glass-panel {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 0.75rem;
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 20px;
   position: relative;
   overflow: hidden;
-  transition: background 0.5s ease;
 }
 
-/* Subtle ambient glow on hover */
+/* Subtle inner glow at top edge only */
 .glass-panel::before {
   content: '';
   position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 60% 40% at 30% 0%, var(--glow-ambient-cyan) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.8s ease;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 245, 255, 0.15),
+    transparent
+  );
   pointer-events: none;
 }
 
-.glass-panel:hover::before {
-  opacity: 1;
+/* ============================================
+   CLOCK - The dominant element
+   ============================================ */
+
+.clock-container {
+  position: relative;
+  text-align: center;
+  padding: 2rem 0;
+}
+
+/* Clock glow behind digits */
+.clock-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 280px;
+  height: 100px;
+  background: radial-gradient(
+    ellipse,
+    rgba(0, 245, 255, 0.15) 0%,
+    rgba(0, 245, 255, 0.05) 40%,
+    transparent 70%
+  );
+  filter: blur(30px);
+  pointer-events: none;
+  animation: clock-glow-pulse 4s ease-in-out infinite;
+}
+
+@keyframes clock-glow-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* Clock digits with flicker effect */
+.clock-digit {
+  display: inline-block;
+  position: relative;
+  animation: digit-flicker 0.1s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+.clock-digit:hover {
+  animation-play-state: running;
+}
+
+@keyframes digit-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.97; }
+}
+
+.clock-date {
+  margin-top: 1rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
 }
 
 /* ============================================
-   STATUS - Breathing ambient lights
+   STATUS - Minimal dots, breathing
    ============================================ */
 
-.status-indicator {
+.indicator-dots {
   display: flex;
+  gap: 8px;
   align-items: center;
-  gap: 0.5rem;
 }
 
-.status-dot {
+.indicator-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0.3;
+}
+
+.indicator-dot:nth-child(1) {
+  background: var(--neon-cyan);
+  animation: dot-breathe 4s ease-in-out infinite;
+}
+
+.indicator-dot:nth-child(2) {
+  background: var(--neon-purple);
+  animation: dot-breathe 4s ease-in-out infinite 1s;
+}
+
+.indicator-dot:nth-child(3) {
+  background: var(--neon-magenta);
+  animation: dot-breathe 4s ease-in-out infinite 2s;
+}
+
+@keyframes dot-breathe {
+  0%, 100% { opacity: 0.2; transform: scale(0.9); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+/* ON AIR indicator */
+.status-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-live-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  position: relative;
+  background: var(--neon-green);
+  animation: live-pulse 2s ease-in-out infinite;
 }
 
-.status-dot.on-air {
-  background: var(--accent-secondary);
-  animation: breathe 3s ease-in-out infinite;
-}
-
-@keyframes breathe {
+@keyframes live-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 var(--glow-ambient-green);
-    opacity: 0.8;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+    opacity: 0.6;
   }
   50% {
-    box-shadow: 0 0 8px 2px var(--glow-ambient-green);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
     opacity: 1;
   }
 }
 
-.status-dot.standby {
-  background: var(--text-muted);
-  opacity: 0.5;
+.status-text {
+  font-size: 0.6rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.on-air-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 1rem;
-  background: var(--bg-elevated);
-  animation: badge-ambient 3s ease-in-out infinite;
-}
-
-@keyframes badge-ambient {
-  0%, 100% {
-    box-shadow: 0 0 15px var(--glow-ambient-green);
-  }
-  50% {
-    box-shadow: 0 0 25px var(--glow-ambient-green);
-  }
-}
-
-.on-air-badge .dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent-secondary);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 0.6; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.1); }
+.status-text.live {
+  color: var(--neon-green);
+  opacity: 0.8;
 }
 
 /* ============================================
-   CONSOLE CONTROLS - Minimal, device-like
+   PROGRESS BAR - Minimal, diffused
    ============================================ */
 
-.console-panel {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-radius: 1rem;
-  padding: 1.25rem 1.5rem;
+.progress-container {
   position: relative;
-}
-
-.console-btn {
-  background: transparent;
-  border: none;
-  border-radius: 0.5rem;
-  color: var(--text-secondary);
-  position: relative;
-  transition: all 0.3s ease;
-}
-
-.console-btn:hover {
-  color: var(--text-primary);
-  background: var(--accent-muted);
-}
-
-.console-btn:active {
-  color: var(--accent-primary);
-  transform: scale(0.95);
-}
-
-/* Play button - hero element, no harsh borders */
-.console-btn-play {
-  background: var(--bg-elevated);
-  border: 1px solid transparent;
-  border-radius: 50%;
-  width: 3.5rem;
-  height: 3.5rem;
-  color: var(--text-secondary);
-  position: relative;
-  transition: all 0.3s ease;
-}
-
-.console-btn-play:hover {
-  border-color: var(--accent-muted);
-  color: var(--text-primary);
-  box-shadow: 0 0 30px var(--glow-ambient-green);
-}
-
-.console-btn-play.playing {
-  color: var(--accent-secondary);
-  box-shadow: 0 0 20px var(--glow-ambient-green);
-}
-
-/* ============================================
-   PROGRESS - Clean line, ambient glow
-   ============================================ */
-
-.progress-groove {
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 2px;
   height: 3px;
-  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
   overflow: hidden;
 }
 
 .progress-fill {
-  background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
-  border-radius: 2px;
   height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 245, 255, 0.4),
+    rgba(168, 85, 247, 0.4)
+  );
+  border-radius: 2px;
+  transition: width 0.3s ease;
   position: relative;
-  animation: progress-glow 2s ease-in-out infinite;
 }
 
-@keyframes progress-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px var(--glow-ambient-green);
-    opacity: 0.9;
-  }
-  50% {
-    box-shadow: 0 0 15px var(--glow-ambient-cyan);
-    opacity: 1;
-  }
+/* Soft leading edge glow */
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 6px;
+  background: radial-gradient(
+    ellipse,
+    rgba(0, 245, 255, 0.5),
+    transparent
+  );
+  filter: blur(4px);
 }
 
 /* ============================================
-   CHAT - Floating messages, no hard borders
+   CONTROLS - Floating, no borders
    ============================================ */
 
-.chat-panel {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-radius: 0.75rem;
+.control-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 12px;
+  border-radius: 50%;
+}
+
+.control-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.control-btn:active {
+  transform: scale(0.95);
+}
+
+.control-btn-play {
+  width: 72px;
+  height: 72px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 245, 255, 0.08) 0%,
+    rgba(168, 85, 247, 0.04) 100%
+  );
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  transition: all 0.4s ease;
+  position: relative;
+}
+
+.control-btn-play::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 245, 255, 0.1),
+    transparent
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.control-btn-play:hover::before {
+  opacity: 1;
+}
+
+.control-btn-play:hover {
+  color: var(--neon-cyan);
+  box-shadow: 0 0 40px rgba(0, 245, 255, 0.1);
+}
+
+.control-btn-play.playing {
+  color: var(--neon-purple);
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.15);
+}
+
+/* ============================================
+   VOLUME - Minimal slider
+   ============================================ */
+
+.volume-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-icon {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--neon-cyan);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.3);
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+/* ============================================
+   CHAT - Floating bubbles
+   ============================================ */
+
+.chat-container {
   position: relative;
 }
 
 .chat-bubble {
-  padding: 0.6rem 0.875rem;
-  border-radius: 0.625rem;
-  position: relative;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  padding: 10px 14px;
+  border-radius: 14px;
+  max-width: 85%;
+  animation: bubble-float 0.35s ease-out;
+}
+
+@keyframes bubble-float {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .chat-bubble-user {
-  background: var(--accent-muted);
-  margin-left: 0.5rem;
+  background: rgba(0, 245, 255, 0.06);
+  margin-left: auto;
 }
 
-.chat-bubble-aidy {
-  background: rgba(0, 255, 136, 0.06);
-  margin-right: 0.5rem;
+.chat-bubble-ai {
+  background: rgba(168, 85, 247, 0.05);
+  margin-right: auto;
 }
 
 .chat-role {
   font-size: 0.5rem;
-  letter-spacing: 0.15em;
-  font-weight: 600;
-  margin-bottom: 0.2rem;
-  opacity: 0.8;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  opacity: 0.4;
 }
 
-.chat-role.you { color: var(--accent-primary); }
-.chat-role.dj { color: var(--accent-secondary); }
+.chat-role.user-label {
+  color: var(--neon-cyan);
+  text-align: right;
+}
 
-/* ============================================
-   INPUT - Minimal, line-style
-   ============================================ */
+.chat-role.ai-label {
+  color: var(--neon-purple);
+}
 
-.input-holo {
-  background: transparent;
+.chat-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
   border: none;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 0;
+  border-radius: 12px;
+  padding: 14px 18px;
   color: var(--text-primary);
-  caret-color: var(--accent-primary);
-  padding: 0.5rem 0;
-  transition: border-color 0.3s ease;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.875rem;
+  caret-color: var(--neon-cyan);
+  transition: all 0.3s ease;
 }
 
-.input-holo:focus {
+.chat-input:focus {
   outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: none;
+  background: rgba(0, 245, 255, 0.03);
+  box-shadow: 0 0 30px rgba(0, 245, 255, 0.05);
 }
 
-.input-holo::placeholder {
+.chat-input::placeholder {
   color: var(--text-muted);
 }
 
 /* ============================================
-   PLAYLIST - Clean list, subtle active state
+   PLAYLIST - Minimal list
    ============================================ */
 
-.playlist-panel {
-  background: var(--bg-elevated);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-radius: 0.75rem;
-  overflow-y: auto;
-}
-
 .playlist-item {
-  padding: 0.75rem 0.5rem;
+  padding: 14px 12px;
   transition: all 0.3s ease;
   cursor: pointer;
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
@@ -390,50 +593,44 @@ body::after {
 }
 
 .playlist-item:hover {
-  background: var(--accent-muted);
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.playlist-item-active {
-  background: rgba(0, 255, 136, 0.04);
+.playlist-item.active {
+  background: rgba(168, 85, 247, 0.04);
 }
 
-/* Sound bars - minimal animation */
+/* Sound wave animation */
 .sound-bar {
   display: flex;
   gap: 2px;
   align-items: flex-end;
-  height: 10px;
+  height: 14px;
 }
 
 .sound-bar span {
   width: 2px;
   border-radius: 1px;
-  background: var(--accent-secondary);
-  animation: sound-wave 0.6s ease-in-out infinite alternate;
+  background: linear-gradient(
+    to top,
+    var(--neon-cyan),
+    var(--neon-purple)
+  );
+  opacity: 0.5;
 }
 
-.sound-bar span:nth-child(1) { animation-delay: 0s; height: 3px; }
-.sound-bar span:nth-child(2) { animation-delay: 0.15s; height: 6px; }
-.sound-bar span:nth-child(3) { animation-delay: 0.3s; height: 4px; }
+.sound-bar span:nth-child(1) { animation: sound-wave 0.8s ease-in-out infinite; height: 4px; }
+.sound-bar span:nth-child(2) { animation: sound-wave 0.8s ease-in-out infinite 0.1s; height: 8px; }
+.sound-bar span:nth-child(3) { animation: sound-wave 0.8s ease-in-out infinite 0.2s; height: 6px; }
+.sound-bar span:nth-child(4) { animation: sound-wave 0.8s ease-in-out infinite 0.3s; height: 10px; }
 
 @keyframes sound-wave {
-  0% { transform: scaleY(0.4); opacity: 0.5; }
-  100% { transform: scaleY(1); opacity: 1; }
+  0%, 100% { transform: scaleY(0.4); opacity: 0.3; }
+  50% { transform: scaleY(1); opacity: 0.7; }
 }
 
 /* ============================================
-   QR - Ambient scanner
-   ============================================ */
-
-.qr-container {
-  background: transparent;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  position: relative;
-}
-
-/* ============================================
-   SCROLLBAR - Minimal line style
+   SCROLLBAR - Invisible
    ============================================ */
 
 ::-webkit-scrollbar {
@@ -445,50 +642,51 @@ body::after {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border-radius: 2px;
-  opacity: 0.3;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-primary);
+  background: rgba(168, 85, 247, 0.2);
+  border-radius: 3px;
 }
 
 /* ============================================
-   UTILITIES - Subtle glow effects
+   ENTRANCE ANIMATIONS
    ============================================ */
 
-.text-glow-green {
-  text-shadow: 0 0 12px var(--glow-ambient-green);
+.fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+  opacity: 0;
 }
 
-.text-glow-cyan {
-  text-shadow: 0 0 12px var(--glow-ambient-cyan);
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+
+.slide-up {
+  animation: slideUp 0.8s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.2s; }
+.delay-3 { animation-delay: 0.3s; }
+.delay-4 { animation-delay: 0.4s; }
+.delay-5 { animation-delay: 0.5s; }
+.delay-6 { animation-delay: 0.6s; }
 
 /* ============================================
-   SPACING UTILITIES - Increased breathing room
+   UTILITIES
    ============================================ */
 
-.glass-panel {
-  padding: 1.25rem;
-  margin-bottom: 1rem;
-}
-
-.chat-panel {
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-.playlist-panel {
-  padding: 0.75rem;
-  max-height: 12rem;
-}
-
-/* ============================================
-   TRANSITIONS - Smooth, subtle
-   ============================================ */
-
-button, input, .glass-panel, .chat-panel, .playlist-panel {
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+.weather-icon {
+  opacity: 0.5;
 }

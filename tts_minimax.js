@@ -15,15 +15,14 @@ let audioData = Buffer.alloc(0)
 let isFinished = false
 const wsUrl = 'wss://api.minimaxi.com/ws/v1/t2a_v2'
 
-// Create SSL context that bypasses verification
-const sslContext = require('tls').createSecureContext({
-  checkHostName: false,
-  verifyMode: require('tls').REQUIRE_DISABLED
+// Use proper HTTPS agent with standard TLS verification
+const httpsAgent = new https.Agent({
+  keepAlive: true
 })
 
 const ws = new WebSocket(wsUrl, {
   headers: { Authorization: `Bearer ${API_KEY}` },
-  ssl: sslContext
+  agent: httpsAgent
 })
 
 ws.on('open', () => {

@@ -1,9 +1,10 @@
 'use server'
 
-import { NextRequest, NextResponse } from 'next/server'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import { NextRequest, NextResponse } from 'next/server'
+import { getStoredSession, httpRequest, NETEASE_API, PLAYLIST_ID, THIRTY_DAYS_MS } from '@/lib/netease'
 import { exec as execSync } from 'child_process'
 import { promisify } from 'util'
 import { spawn } from 'child_process'
@@ -231,19 +232,57 @@ async function getRecommendation(weather: WeatherData, excludeIds: string[] = []
   return recommendation
 }
 
+import { safeError, validateEnum, validateNumberRange, validateStringLength } from '@/lib/errors'
+
 export async function GET(request: NextRequest) {
-  const action = request.nextUrl.searchParams.get('action') || 'status'
-  switch (action) {
-    case 'weather': return NextResponse.json({ success: true, data: getWeather() })
-    case 'recommend': return NextResponse.json({ success: true, data: await getRecommendation(getWeather()) })
-    case 'status': return NextResponse.json({ success: true, data: { playing: false, currentSong: null, weather: getWeather() } })
-    default: return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 })
+  try {
+    const action = request.nextUrl.searchParams.get('action') || 'status'
+    if (!validateEnum(action, ['weather', 'recommend', 'status'])) {
+      return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
+    }
+    switch (action) {
+      case 'weather': return NextResponse.json({ success: true, data: getWeather() })
+      case 'recommend': return NextResponse.json({ success: true, data: await getRecommendation(getWeather()) })
+      case 'status': return NextResponse.json({ success: true, data: { playing: false, currentSong: null, weather: getWeather() } })
+      default: return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
+    }
+  } catch {
+    return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { action, songId, message, excludeIds } = await request.json()
+    const body = await request.json()
+    const { action, songId, message, excludeIds } = body
+
+    // Validate action
+    if (!validateEnum(action, ['play', 'next', 'chat'])) {
+      return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
+    }
+
+    // Validate songId if provided - must be positive integer string
+    if (songId !== undefined && !validateNumberRange(songId, 1)) {
+      return NextResponse.json(safeError('Invalid songId', 400), { status: 400 })
+    }
+
+    // Validate message if provided - must be string, max 500 chars
+    if (message !== undefined && !validateStringLength(message, 1, 500)) {
+      return NextResponse.json(safeError('Invalid message', 400), { status: 400 })
+    }
+
+    // Validate excludeIds if provided - must be array of strings
+    if (excludeIds !== undefined) {
+      if (!Array.isArray(excludeIds)) {
+        return NextResponse.json(safeError('Invalid excludeIds', 400), { status: 400 })
+      }
+      for (const id of excludeIds) {
+        if (typeof id !== 'string' || id.trim().length === 0) {
+          return NextResponse.json(safeError('Invalid excludeIds', 400), { status: 400 })
+        }
+      }
+    }
+
     switch (action) {
       case 'play': {
         const playlist = getPlaylist()
@@ -258,10 +297,16 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: { songId: rec.songId, songName: rec.songName, artist: rec.artist, youtubeId: rec.youtubeId, youtubeUrl: rec.youtubeUrl, playing: true, reason: rec.reason, mood: rec.mood } })
       }
       case 'next': {
+        if (excludeIds !== undefined && !Array.isArray(excludeIds)) {
+          return NextResponse.json(safeError('Invalid excludeIds', 400), { status: 400 })
+        }
         const excludes = excludeIds || []
         return NextResponse.json({ success: true, data: await getRecommendation(getWeather(), excludes) })
       }
       case 'chat': {
+        if (message !== undefined && typeof message !== 'string') {
+          return NextResponse.json(safeError('Invalid message format', 400), { status: 400 })
+        }
         const currentSong = getCurrentPlayingSong()
         const weather = getWeather()
         const hour = new Date().getHours()
@@ -289,9 +334,9 @@ export async function POST(request: NextRequest) {
         const audioBase64 = await generateMiniMaxTTS(reply)
         return NextResponse.json({ success: true, data: { reply, audio: audioBase64 } })
       }
-      default: return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 })
+      default: return NextResponse.json(safeError('Unknown action', 400), { status: 400 })
     }
-  } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 400 })
+  } catch {
+    return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
   }
 }

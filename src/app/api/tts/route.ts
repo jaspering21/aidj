@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
 import { promisify } from 'util'
 import { readFile } from 'fs/promises'
+import { safeError, validateStringLength } from '@/lib/errors'
 
 const exec = promisify(spawn)
 
@@ -36,13 +37,16 @@ asyncio.run(main())
 export async function POST(request: NextRequest) {
   try {
     const { text } = await request.json()
-    if (!text) return NextResponse.json({ success: false, error: 'No text provided' }, { status: 400 })
+    // Validate text - must be string, 1-500 chars
+    if (!validateStringLength(text, 1, 500)) {
+      return NextResponse.json({ success: false, error: 'No text provided' }, { status: 400 })
+    }
 
     const audioBase64 = await generateSpeech(text)
     if (!audioBase64) return NextResponse.json({ success: false, error: 'TTS failed' }, { status: 500 })
 
     return NextResponse.json({ success: true, data: { audio: audioBase64 } })
-  } catch (err) {
-    return NextResponse.json({ success: false, error: String(err) }, { status: 500 })
+  } catch {
+    return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
   }
 }

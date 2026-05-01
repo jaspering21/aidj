@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import NeteaseLoginModal from './components/NeteaseLoginModal'
+import { withRetry } from '@/lib/retry'
 
 interface WeatherData {
   city: string
@@ -27,6 +28,13 @@ interface PlaylistItem {
   artist: string
 }
 
+interface ErrorState {
+  weather: string | null
+  recommendation: string | null
+  playlist: string | null
+  chat: string | null
+}
+
 const conditionIcons: Record<string, string> = {
   sunny: '☀️',
   cloudy: '⛅',
@@ -44,8 +52,9 @@ async function fetchWeatherByLocation(): Promise<WeatherData> {
       async (pos) => {
         try {
           const { latitude, longitude } = pos.coords
-          const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`)
-          const data = await res.json()
+          const data = await withRetry(() =>
+            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`).then(r => r.json())
+          )
           const cw = data.current_weather
           const map: Record<number, WeatherData['condition']> = {
             0: 'sunny', 1: 'sunny', 2: 'cloudy', 3: 'cloudy',
@@ -73,19 +82,31 @@ async function fetchWeatherByLocation(): Promise<WeatherData> {
 export default function MusicAgent() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [volume, setVolume] = useState(70)
   const [weather, setWeather] = useState<WeatherData | null>(null)
   const [recommendation, setRecommendation] = useState<SongRecommendation | null>(null)
   const [playlist, setPlaylist] = useState<PlaylistItem[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [weatherLoading, setWeatherLoading] = useState(true)
+  const [recommendationLoading, setRecommendationLoading] = useState(true)
+  const [playlistLoading, setPlaylistLoading] = useState(true)
+  const [chatLoading, setChatLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<ErrorState>({
+    weather: null,
+    recommendation: null,
+    playlist: null,
+    chat: null
+  })
   const [chatInput, setChatInput] = useState('')
   const [chatHistory, setChatHistory] = useState<{role: 'user' | 'aidj'; text: string}[]>([])
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [nickname, setNickname] = useState('')
+  const [currentTime, setCurrentTime] = useState('')
+  const [currentDate, setCurrentDate] = useState('')
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const progressInterval = useRef<NodeJS.Timeout | null>(null)
-  const autoPlayAttemptedRef = useRef(false)
   const userInteractedRef = useRef(false)
   const playlistPlayRef = useRef(false)
 
@@ -93,7 +114,26 @@ export default function MusicAgent() {
     init()
   }, [])
 
-  // Track user interaction for audio playback policy
+  // Clock update
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date()
+      const hours = now.getHours().toString().padStart(2, '0')
+      const minutes = now.getMinutes().toString().padStart(2, '0')
+      const seconds = now.getSeconds().toString().padStart(2, '0')
+      setCurrentTime(`${hours}:${minutes}:${seconds}`)
+
+      const month = (now.getMonth() + 1).toString().padStart(2, '0')
+      const day = now.getDate().toString().padStart(2, '0')
+      const weekDays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+      setCurrentDate(`${month}.${day} · ${weekDays[now.getDay()]}`)
+    }
+    updateClock()
+    const interval = setInterval(updateClock, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Track user interaction
   useEffect(() => {
     const handler = () => { userInteractedRef.current = true }
     window.addEventListener('click', handler, { once: true })
@@ -106,19 +146,18 @@ export default function MusicAgent() {
     }
   }, [])
 
-  // Auto-play when recommendation changes or login completes
+  // Auto-play
   useEffect(() => {
     const timer = setTimeout(() => {
-      // Skip if playlist play is in progress (it will handle playback)
       if (playlistPlayRef.current) return
       if (!recommendation?.songId || !isLoggedIn || !audioRef.current || !userInteractedRef.current) return
-      // Skip if audio element has no valid source yet or is already playing
       if (!audioRef.current.src || audioRef.current.src === window.location.href) return
       audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error)
     }, 300)
     return () => clearTimeout(timer)
   }, [recommendation?.songId, isLoggedIn])
 
+  // Progress tracking
   useEffect(() => {
     if (isPlaying && audioRef.current) {
       progressInterval.current = setInterval(() => {
@@ -135,8 +174,19 @@ export default function MusicAgent() {
     return () => { if (progressInterval.current) clearInterval(progressInterval.current) }
   }, [isPlaying])
 
+  // Volume sync
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100
+    }
+  }, [volume])
+
   const init = async () => {
     setIsLoading(true)
+    setWeatherLoading(true)
+    setRecommendationLoading(true)
+    setPlaylistLoading(true)
+    setErrorMessage({ weather: null, recommendation: null, playlist: null, chat: null })
     try {
       const loginRes = await fetch('/api/netease-login', {
         method: 'POST',
@@ -152,14 +202,24 @@ export default function MusicAgent() {
       }
 
       const [w, rec] = await Promise.all([
-        fetchWeatherByLocation(),
-        fetch('/api/aidj?action=recommend').then(r => r.json())
+        fetchWeatherByLocation().then(data => {
+          setWeatherLoading(false)
+          return data
+        }),
+        fetch('/api/aidj?action=recommend').then(async r => {
+          const data = await r.json()
+          setRecommendationLoading(false)
+          return data
+        })
       ])
       setWeather(w)
       if (rec.success) {
         setRecommendation(rec.data)
+      } else {
+        setErrorMessage(prev => ({ ...prev, recommendation: 'Failed to load recommendation. Please try again.' }))
       }
 
+      setPlaylistLoading(true)
       const lines = await fetch('/playlist_2205555594.txt').then(r => r.text())
       const items: PlaylistItem[] = lines.split('\n')
         .filter(l => /^\d+\.\s/.test(l))
@@ -176,10 +236,18 @@ export default function MusicAgent() {
           }
         }).filter(Boolean) as PlaylistItem[]
       setPlaylist(items)
+      setPlaylistLoading(false)
     } catch (err) {
-      console.error('Init failed:', err)
+      setErrorMessage(prev => ({
+        ...prev,
+        recommendation: 'Failed to load. Please try again.',
+        playlist: 'Failed to load playlist.'
+      }))
     } finally {
       setIsLoading(false)
+      setWeatherLoading(false)
+      setRecommendationLoading(false)
+      setPlaylistLoading(false)
     }
   }
 
@@ -189,22 +257,85 @@ export default function MusicAgent() {
     setShowLoginModal(false)
   }
 
+  const fetchAudioUrl = async (songId: string): Promise<string | null> => {
+    try {
+      const data = await withRetry(() =>
+        fetch(`/api/netease-player?action=url&songId=${songId}`).then(async r => {
+          if (!r.ok) throw new Error(`API error: ${r.status}`)
+          return r.json()
+        })
+      )
+      if (data.success && data.data?.url) {
+        return data.data.url
+      }
+      console.log('fetchAudioUrl: song', songId, 'URL is null')
+    } catch (e) {
+      console.error('fetchAudioUrl error:', e)
+    }
+    return null
+  }
+
+  // Try to play a song, auto-skip if unavailable (max 3 attempts)
+  const tryPlaySong = async (songId: string, attempts = 0): Promise<boolean> => {
+    const maxAttempts = 3
+    if (attempts >= maxAttempts) {
+      setChatHistory(prev => [...prev, { role: 'aidj', text: '抱歉，这几首歌暂时都无法播放，请尝试其他歌曲。' }])
+      return false
+    }
+
+    // Clear previous audio state first
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.src = ''
+    }
+
+    const url = await fetchAudioUrl(songId)
+    if (!url) {
+      // Song unavailable - get next song and retry
+      const excludeIds = [songId]
+      try {
+        const res = await fetch('/api/aidj', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'next', excludeIds })
+        })
+        const data = await res.json()
+        if (data.success && data.data?.songId) {
+          setRecommendation(data.data)
+          setProgress(0)
+          setIsPlaying(false)
+          // Recursively try the next song
+          return tryPlaySong(data.data.songId, attempts + 1)
+        }
+      } catch (e) {
+        console.error('tryPlaySong retry error:', e)
+      }
+      return false
+    }
+
+    if (audioRef.current) {
+      audioRef.current.src = url
+      audioRef.current.load()
+      try {
+        await audioRef.current.play()
+        setIsPlaying(true)
+        return true
+      } catch (err) {
+        console.error('Playback failed:', err)
+        setIsPlaying(false)
+        return false
+      }
+    }
+    return false
+  }
+
   const handlePlayPause = async () => {
     userInteractedRef.current = true
     if (!recommendation?.songId || !isLoggedIn) return
     if (!isPlaying) {
-      if (audioRef.current) {
-        // If no src loaded, fetch URL first
-        if (!audioRef.current.src || audioRef.current.src === '' || audioRef.current.src === window.location.href) {
-          const url = await fetchAudioUrl(recommendation.songId)
-          if (url && audioRef.current) {
-            audioRef.current.src = url
-            audioRef.current.load()
-          }
-        }
-        audioRef.current.play().then(() => {
-          setIsPlaying(true)
-        }).catch(console.error)
+      const success = await tryPlaySong(recommendation.songId)
+      if (!success) {
+        // No playable URL found
       }
     } else {
       if (audioRef.current) {
@@ -212,18 +343,6 @@ export default function MusicAgent() {
         setIsPlaying(false)
       }
     }
-  }
-
-  const fetchAudioUrl = async (songId: string): Promise<string | null> => {
-    try {
-      const res = await fetch(`/api/netease-player?action=url&songId=${songId}`)
-      const data = await res.json()
-      if (data.success && data.data?.url) {
-        return data.data.url
-      }
-      console.error('fetchAudioUrl failed:', data.error || 'no url in response')
-    } catch { }
-    return null
   }
 
   const handleNext = async () => {
@@ -244,14 +363,7 @@ export default function MusicAgent() {
           audioRef.current.currentTime = 0
         }
         if (newRec.songId) {
-          const url = await fetchAudioUrl(newRec.songId)
-          if (url && audioRef.current) {
-            audioRef.current.src = url
-            audioRef.current.load()
-            audioRef.current.play().then(() => {
-              setIsPlaying(true)
-            }).catch(console.error)
-          }
+          await tryPlaySong(newRec.songId)
         }
       }
     } catch (err) { console.error('Next failed:', err) }
@@ -269,8 +381,9 @@ export default function MusicAgent() {
     if (!chatInput.trim()) return
     const msg = chatInput
     setChatInput('')
-    // Add user message to history
     setChatHistory(prev => [...prev, { role: 'user', text: msg }])
+    setChatLoading(true)
+    setErrorMessage(prev => ({ ...prev, chat: null }))
     try {
       const res = await fetch('/api/aidj', {
         method: 'POST',
@@ -279,15 +392,19 @@ export default function MusicAgent() {
       })
       const data = await res.json()
       if (data.success) {
-        // Add AI response to history
         setChatHistory(prev => [...prev, { role: 'aidj', text: data.data.reply }])
         if (data.data.audio) {
           const audio = new Audio(`data:audio/mp3;base64,${data.data.audio}`)
-          // This plays after user interaction so should be fine
           audio.play().catch(console.error)
         }
+      } else {
+        setChatHistory(prev => [...prev, { role: 'aidj', text: '抱歉，DJ暂时无法回应，请稍后再试。' }])
       }
-    } catch (err) { console.error('Chat failed:', err) }
+    } catch (err) {
+      setErrorMessage(prev => ({ ...prev, chat: 'Failed to send message. Please try again.' }))
+    } finally {
+      setChatLoading(false)
+    }
   }
 
   const playSong = async (item: PlaylistItem, idx: number) => {
@@ -307,48 +424,17 @@ export default function MusicAgent() {
       youtubeUrl: ''
     })
 
-    const url = await fetchAudioUrl(item.id)
-    if (!url) {
-      console.error('Song unavailable:', item.songName)
-      playlistPlayRef.current = false
-      setChatHistory(prev => [...prev, { role: 'aidj', text: `抱歉，《${item.songName}》暂时无法播放，请尝试其他歌曲。` }])
-      setIsPlaying(false)
-      return
-    }
-
-    if (audioRef.current) {
-      audioRef.current.src = url
-      audioRef.current.load()
-      const playPromise = audioRef.current.play()
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          setIsPlaying(true)
-        }).catch((err) => {
-          console.error('Playback failed:', err)
-          setChatHistory(prev => [...prev, { role: 'aidj', text: `播放失败，请检查网络或刷新页面重试。` }])
-          setIsPlaying(false)
-        }).finally(() => {
-          playlistPlayRef.current = false
-        })
-      } else {
-        playlistPlayRef.current = false
-      }
-    } else {
-      playlistPlayRef.current = false
-    }
+    await tryPlaySong(item.id)
+    playlistPlayRef.current = false
   }
-
-  const now = new Date()
-  const dateStr = `${now.getMonth() + 1}.${now.getDate()}`
-  const weekDays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
-  const weekDay = weekDays[now.getDay()]
-  const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center relative z-10">
-        <div className="glass-panel p-8 text-center">
-          <div className="status-dot on-air mx-auto mb-4" />
+        <div className="text-center">
+          <div className="status-live justify-center mb-4">
+            <div className="status-live-dot" />
+          </div>
           <p className="hud-label">INITIALIZING</p>
         </div>
       </div>
@@ -356,111 +442,121 @@ export default function MusicAgent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto p-4 pb-8 relative z-10">
-      {/* Login Modal */}
-      {showLoginModal && (
-        <NeteaseLoginModal
-          onSuccess={handleLoginSuccess}
-          onClose={() => setShowLoginModal(false)}
+    <>
+      {/* Global ambient light layers */}
+      <div className="ambient-light-primary" />
+      <div className="ambient-light-secondary" />
+      <div className="ambient-light-tertiary" />
+      <div className="scanlines" />
+
+      {/* Main container */}
+      <div className="min-h-screen flex flex-col max-w-md mx-auto px-6 py-8 relative z-10">
+
+        {/* Login Modal */}
+        {showLoginModal && (
+          <NeteaseLoginModal
+            onSuccess={handleLoginSuccess}
+            onClose={() => setShowLoginModal(false)}
+          />
+        )}
+
+        {/* Hidden Audio Element */}
+        <audio
+          ref={audioRef}
+          preload="auto"
+          onEnded={() => {
+            setIsPlaying(false)
+            setProgress(0)
+            handleNext()
+          }}
+          onError={() => setIsPlaying(false)}
+          onCanPlay={() => { if (audioRef.current) audioRef.current.volume = volume / 100 }}
         />
-      )}
 
-      {/* Hidden Audio Element */}
-      <audio
-        ref={audioRef}
-        preload="auto"
-        onEnded={() => {
-          setIsPlaying(false)
-          setProgress(0)
-          handleNext()
-        }}
-        onError={(e) => {
-          console.error('Audio error:', e)
-          setIsPlaying(false)
-        }}
-        onCanPlay={() => {
-          if (audioRef.current) audioRef.current.volume = 0.8
-        }}
-      />
+        {/* Header - Minimal */}
+        <div className="flex items-center justify-between mb-16 fade-in">
+          {/* Left - System status dots */}
+          <div className="indicator-dots">
+            <div className="indicator-dot" />
+            <div className="indicator-dot" />
+            <div className="indicator-dot" />
+          </div>
 
-      {/* Header - Dot Matrix Time */}
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <p className="hud-label mb-1">DATE</p>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{dateStr} · {weekDay}</p>
+          {/* Right - Weather */}
+          <div className="flex items-center gap-2">
+            {weatherLoading ? (
+              <div className="flex items-center gap-2 animate-pulse">
+                <div className="w-4 h-4 rounded-full bg-gray-700" />
+                <div className="w-8 h-4 rounded bg-gray-700" />
+              </div>
+            ) : weather ? (
+              <>
+                <span className="weather-icon">{conditionIcons[weather.condition]}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{weather.temperature}°</span>
+              </>
+            ) : errorMessage.weather ? (
+              <span style={{ color: 'var(--neon-magenta)', fontSize: '0.7rem' }}>Weather unavailable</span>
+            ) : null}
+          </div>
         </div>
-        <div className="text-right">
-          <p className="hud-label mb-1">TIME</p>
-          <p className="time-display">{timeStr}</p>
-        </div>
-      </div>
 
-      {/* Status Bar */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="status-indicator">
-          {isPlaying ? (
-            <div className="on-air-badge">
-              <div className="dot" />
-              <span className="text-xs uppercase tracking-widest text-glow-green" style={{ color: 'var(--accent-neon-green)' }}>ON AIR</span>
+        {/* Central Clock - Dominant Element */}
+        <div className="clock-container slide-up delay-1">
+          <div className="clock-glow" />
+          <div className="time-display font-display clock-digit" style={{ fontSize: '4rem', position: 'relative', zIndex: 1 }}>
+            {currentTime || '00:00:00'}
+          </div>
+          <div className="clock-date">{currentDate}</div>
+        </div>
+
+        {/* Spacer */}
+        <div className="h-12" />
+
+        {/* Now Playing */}
+        <div className="glass-panel p-6 mb-6 slide-up delay-2">
+          <div className="flex items-center justify-between mb-4">
+            <p className="hud-label">NOW PLAYING</p>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{Math.round(progress)}%</span>
+          </div>
+
+          <div className="progress-container mb-4">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+
+          {recommendationLoading ? (
+            <div className="animate-pulse">
+              <div className="h-5 bg-gray-700 rounded w-3/4 mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-1/2"></div>
             </div>
+          ) : errorMessage.recommendation ? (
+            <p style={{ color: 'var(--neon-magenta)', fontSize: '0.85rem' }}>{errorMessage.recommendation}</p>
           ) : (
-            <div className="flex items-center gap-2">
-              <div className="status-dot standby" />
-              <span className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>STANDBY</span>
-            </div>
+            <>
+              <h2 className="font-display text-lg mb-1 truncate tracking-wide" style={{ color: 'var(--text-primary)' }}>
+                {recommendation?.songName || '---'}
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                {recommendation?.artist || '未知歌手'}
+              </p>
+            </>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {conditionIcons[weather?.condition || 'sunny']} {weather?.temperature}°C
-          </span>
-        </div>
-      </div>
 
-      {/* Now Playing - Glass Panel */}
-      <div className="glass-panel p-5 mb-4">
-        <p className="hud-label mb-3">NOW PLAYING</p>
-        <div className="progress-groove h-1.5 mb-4">
-          <div className="progress-fill" style={{ width: `${progress}%` }} />
-        </div>
-        <h2 className="text-lg font-medium mb-1 truncate text-glow-cyan" style={{ color: 'var(--text-primary)' }}>
-          {recommendation?.songName || '---'}
-        </h2>
-        <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
-          {recommendation?.artist || '未知歌手'}
-        </p>
-      </div>
-
-      {/* Playback Controls - Spaceship Console */}
-      <div className="console-panel mb-4">
-        {/* Left tick marks */}
-        <div className="console-ticks" style={{ position: 'absolute', left: '1.5rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-          <div className="console-tick" />
-          <div className="console-tick" />
-          <div className="console-tick" />
-          <div className="console-tick" />
-        </div>
-
-        {/* Right tick marks */}
-        <div className="console-ticks" style={{ position: 'absolute', right: '1.5rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-          <div className="console-tick" style={{ background: 'linear-gradient(90deg, transparent, var(--accent-neon-purple))' }} />
-          <div className="console-tick" style={{ background: 'linear-gradient(90deg, transparent, var(--accent-neon-purple))' }} />
-          <div className="console-tick" style={{ background: 'linear-gradient(90deg, transparent, var(--accent-neon-purple))' }} />
-          <div className="console-tick" style={{ background: 'linear-gradient(90deg, transparent, var(--accent-neon-purple))' }} />
-        </div>
-
-        <div className="flex items-center justify-center gap-10">
-          <button onClick={handlePrev} className="console-btn p-3 rounded-lg">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        {/* Playback Controls */}
+        <div className="flex items-center justify-center gap-8 mb-10 slide-up delay-3">
+          <button onClick={handlePrev} className="control-btn" disabled={!isLoggedIn}>
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
             </svg>
           </button>
+
           <button
             onClick={handlePlayPause}
-            className={`console-btn-play flex items-center justify-center ${isPlaying ? 'playing' : ''} ${!isLoggedIn ? 'opacity-40 cursor-not-allowed' : ''}`}
+            className={`control-btn-play ${isPlaying ? 'playing' : ''}`}
+            disabled={!isLoggedIn}
           >
             {isPlaying ? (
-              <svg className="w-7 h-7 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 4h4v16H6zm8 0h4v16h-4z"/>
               </svg>
             ) : (
@@ -469,110 +565,153 @@ export default function MusicAgent() {
               </svg>
             )}
           </button>
-          <button onClick={handleNext} className="console-btn p-3 rounded-lg">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+
+          <button onClick={handleNext} className="control-btn" disabled={!isLoggedIn}>
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/>
             </svg>
           </button>
         </div>
-      </div>
 
-      {/* DJ Chat Interface - Holographic Comm Panel */}
-      <div className="chat-panel p-4 mb-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="status-dot on-air" />
-          <span className="hud-label">AIDJ CHAT</span>
-        </div>
-
-        {/* Chat History */}
-        <div className="space-y-3 mb-3 max-h-40 overflow-y-auto">
-          {chatHistory.map((msg, idx) => (
-            <div
-              key={idx}
-              className={`chat-bubble ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-aidy'}`}
-            >
-              <div className={`chat-role ${msg.role === 'user' ? 'you' : 'dj'}`}>
-                {msg.role === 'user' ? 'YOU' : 'DJ'}
-              </div>
-              <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{msg.text}</p>
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={handleChat} className="flex gap-2">
+        {/* Volume */}
+        <div className="volume-container mb-10 px-4 slide-up delay-4">
+          <svg className="volume-icon w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+          </svg>
           <input
-            type="text"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="Transmit message..."
-            className="input-holo flex-1 px-4 py-2 text-sm"
+            type="range"
+            min="0"
+            max="100"
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            className="volume-slider"
           />
-          <button type="submit" className="console-btn px-4 py-2 rounded-lg text-sm">
-            →
-          </button>
-        </form>
-      </div>
+        </div>
 
-      {/* Playlist - Holographic Panel */}
-      <div className="playlist-panel p-4 max-h-48 overflow-y-auto">
-        <p className="hud-label mb-3">PLAYLIST</p>
-        <div className="space-y-2">
-          {playlist.map((item, idx) => (
-            <div
-              key={item.id}
-              onClick={() => isLoggedIn && playSong(item, idx)}
-              className={`playlist-item ${
-                currentIndex === idx ? 'playlist-item-active' : ''
-              } ${!isLoggedIn ? 'opacity-40 cursor-not-allowed' : ''}`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-xs w-5 text-center font-mono" style={{ color: currentIndex === idx ? 'var(--accent-neon-green)' : 'var(--text-muted)' }}>
-                  {String(idx + 1).padStart(2, '0')}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate" style={{ color: currentIndex === idx ? 'var(--accent-neon-green)' : 'var(--text-primary)' }}>
-                    {item.songName}
-                  </p>
-                  <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{item.artist}</p>
-                </div>
-                {currentIndex === idx && isPlaying && (
-                  <div className="sound-bar">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                )}
-              </div>
+        {/* AI DJ Chat */}
+        <div className="glass-panel p-5 mb-6 slide-up delay-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="status-live">
+              <div className="status-live-dot" />
             </div>
-          ))}
+            <p className="hud-label">AIDJ</p>
+          </div>
+
+          <div className="space-y-3 mb-4 max-h-32 overflow-y-auto">
+            {chatHistory.length === 0 && !chatLoading && (
+              <p className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+                与 AI DJ 对话...
+              </p>
+            )}
+            {chatLoading && (
+              <div className="animate-pulse">
+                <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+              </div>
+            )}
+            {chatLoading && (
+              <p className="text-sm text-center" style={{ color: 'var(--neon-purple)', fontSize: '0.75rem' }}>
+                DJ is thinking...
+              </p>
+            )}
+            {chatHistory.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`chat-bubble ${msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}`}
+              >
+                <div className={`chat-role ${msg.role === 'user' ? 'user-label' : 'ai-label'}`}>
+                  {msg.role === 'user' ? 'YOU' : 'DJ'}
+                </div>
+                <p style={{ color: 'var(--text-primary)', fontSize: '0.85rem' }}>{msg.text}</p>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleChat}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="发送消息..."
+              className="chat-input"
+            />
+          </form>
+        </div>
+
+        {/* Playlist */}
+        <div className="glass-panel p-4 mb-8 max-h-48 overflow-y-auto slide-up delay-6">
+          <p className="hud-label mb-3">PLAYLIST</p>
+          {playlistLoading ? (
+            <div className="animate-pulse space-y-2">
+              <div className="h-4 bg-gray-700 rounded w-full mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-5/6 mb-2"></div>
+              <div className="h-4 bg-gray-700 rounded w-4/5"></div>
+            </div>
+          ) : errorMessage.playlist ? (
+            <p style={{ color: 'var(--neon-magenta)', fontSize: '0.85rem' }}>{errorMessage.playlist}</p>
+          ) : (
+            <div className="space-y-1">
+              {playlist.map((item, idx) => (
+              <div
+                key={item.id}
+                onClick={() => playSong(item, idx)}
+                className={`playlist-item ${currentIndex === idx ? 'active' : ''}`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-display text-xs w-5 text-center" style={{
+                    color: currentIndex === idx ? 'var(--neon-purple)' : 'var(--text-muted)',
+                    opacity: currentIndex === idx ? 0.8 : 0.4
+                  }}>
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p style={{
+                      fontSize: '0.85rem',
+                      color: currentIndex === idx ? 'var(--text-primary)' : 'var(--text-secondary)'
+                    }}>
+                      {item.songName}
+                    </p>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.artist}</p>
+                  </div>
+                  {currentIndex === idx && isPlaying && (
+                    <div className="sound-bar">
+                      <span /><span /><span /><span />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Status */}
+        <div className="flex items-center justify-between mt-auto fade-in delay-6">
+          {isLoggedIn ? (
+            <div className="flex items-center gap-4">
+              <div className="status-live">
+                <div className="status-live-dot" style={{
+                  background: isPlaying ? 'var(--neon-green)' : 'var(--text-muted)',
+                  boxShadow: isPlaying ? '0 0 10px rgba(16, 185, 129, 0.4)' : 'none',
+                  animation: isPlaying ? 'live-pulse 2s ease-in-out infinite' : 'none'
+                }} />
+                <span className={`status-text ${isPlaying ? 'live' : ''}`}>
+                  {isPlaying ? 'ON AIR' : 'STANDBY'}
+                </span>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{nickname}</span>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowLoginModal(true)}
+              className="control-btn px-4 py-2"
+            >
+              <span style={{ color: 'var(--neon-cyan)', fontSize: '0.7rem', letterSpacing: '0.2em' }}>LOGIN</span>
+            </button>
+          )}
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.65rem' }}>AIDJ v2.0</span>
         </div>
       </div>
-
-      {/* Bottom Status */}
-      <div className="mt-4 flex items-center justify-between">
-        {isLoggedIn ? (
-          <div className="flex items-center gap-2">
-            <div className="status-dot on-air" />
-            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{nickname}</span>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowLoginModal(true)}
-            className="console-btn px-4 py-2 rounded-lg text-sm"
-            style={{ borderColor: 'rgba(0, 255, 136, 0.3)', color: 'var(--accent-neon-green)' }}
-          >
-            LOGIN
-          </button>
-        )}
-        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>AIDJ v1.0</span>
-      </div>
-
-      <style>{`
-        @keyframes soundBar {
-          0% { height: 3px; }
-          100% { height: 10px; }
-        }
-      `}</style>
-    </div>
+    </>
   )
 }

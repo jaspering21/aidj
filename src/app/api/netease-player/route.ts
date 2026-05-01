@@ -5,63 +5,14 @@ import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import https from 'https'
-
-const NETEASE_API = 'music.163.com'
-const PLAYLIST_ID = '2205555594'
-
-interface NeteaseSession {
-  cookie: string
-  username: string
-  userId: number
-  expiresAt: number
-}
-
-const SESSION_FILE = join(homedir(), '.aidj', 'netease_session.json')
-
-function getNeteaseSession(): NeteaseSession | null {
-  try {
-    // Try session file first
-    if (existsSync(SESSION_FILE)) {
-      const data = JSON.parse(readFileSync(SESSION_FILE, 'utf-8'))
-      if (data.expiresAt > Date.now() && data.cookie) {
-        return data
-      }
-    }
-    // Fall back to secrets.json
-    const secretsPath = join(homedir(), '.aidj', 'secrets.json')
-    if (existsSync(secretsPath)) {
-      const secrets = JSON.parse(readFileSync(secretsPath, 'utf-8'))
-      if (secrets.netease_cookie) {
-        return {
-          cookie: secrets.netease_cookie,
-          username: 'cached',
-          userId: parseInt(secrets.netease_cookie.match(/userId=(\d+)/)?.[1] || '0'),
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000
-        }
-      }
-    }
-  } catch { }
-  return null
-}
-
-function httpRequest(options: any, postData?: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res: any) => {
-      let data = ''
-      res.on('data', (chunk: string) => data += chunk)
-      res.on('end', () => resolve(data))
-    })
-    req.on('error', reject)
-    if (postData) req.write(postData)
-    req.end()
-  })
-}
+import { getSecureSession, NETEASE_API, httpRequest, PLAYLIST_ID, TEST_SONG_ID } from '@/lib/netease'
+import { safeError, validateEnum, validateNumberRange } from '@/lib/errors'
 
 async function getPlayableUrl(songId: number, cookie: string): Promise<{ url: string; br: number } | null> {
   const postData = `ids=[${songId}]&br=320000`
 
   const options = {
-    hostname: 'music.163.com',
+    hostname: NETEASE_API,
     path: '/api/song/enhance/player/url',
     method: 'POST',
     headers: {
@@ -115,13 +66,25 @@ async function getLyric(songId: number, cookie: string): Promise<{ lrc: string; 
 }
 
 export async function GET(request: NextRequest) {
-  const session = getNeteaseSession()
+  const session = getSecureSession()
   if (!session) {
-    return NextResponse.json({ success: false, error: 'Not logged in' }, { status: 401 })
+    return NextResponse.json({ success: false, error: 'Session expired or not found. Please login again.' }, { status: 401 })
   }
 
   const songId = request.nextUrl.searchParams.get('songId')
   const action = request.nextUrl.searchParams.get('action') || 'play'
+
+  // Validate action enum
+  if (!validateEnum(action, ['url', 'lyric', 'validate'])) {
+    return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 })
+  }
+
+  // Validate songId if provided for url/lyric actions - must be positive integer
+  if (action !== 'validate' && songId !== null) {
+    if (!validateNumberRange(songId, 1)) {
+      return NextResponse.json({ success: false, error: 'songId required' }, { status: 400 })
+    }
+  }
 
   switch (action) {
     case 'url': {
@@ -144,7 +107,7 @@ export async function GET(request: NextRequest) {
     }
 
     case 'validate': {
-      const urlData = await getPlayableUrl(476527848, session.cookie) // Test with a known song
+      const urlData = await getPlayableUrl(TEST_SONG_ID, session.cookie)
       if (urlData) {
         return NextResponse.json({ success: true, data: { valid: true } })
       }
