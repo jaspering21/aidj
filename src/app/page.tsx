@@ -141,6 +141,7 @@ export default function MusicAgent() {
   const [ttsEnabled, setTtsEnabled] = useState(true)
   const [preferredMood, setPreferredMood] = useState<string | undefined>(undefined)
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
+  const [hasUsedBefore, setHasUsedBefore] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const progressInterval = useRef<NodeJS.Timeout | null>(null)
   const userInteractedRef = useRef(false)
@@ -280,6 +281,19 @@ export default function MusicAgent() {
     }
     saveMood()
   }, [preferredMood])
+
+  // Detect if user has used app before (via localStorage)
+  function checkFirstTimeUser(): boolean {
+    if (typeof window === 'undefined') return false
+    const hasVisited = localStorage.getItem('aidj_visited')
+    return !!hasVisited
+  }
+
+  function markAsVisited(): void {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('aidj_visited', 'true')
+    }
+  }
 
   const init = async () => {
     setIsLoading(true)
@@ -446,13 +460,29 @@ export default function MusicAgent() {
   async function playWelcomeMessage(rec: RecommendationContext) {
     setIsAIDJSpeaking(true)
 
-    const text = `你好！我是 AIDJ，你的专属音乐 DJ。根据${rec.weatherContext}，我为你选了一首很棒的歌——《${rec.songName}》，${rec.artist}，希望你会喜欢`
+    // Show different message based on whether user has used app before
+    const isFirstTime = !checkFirstTimeUser()
+
+    let text: string
+    if (isFirstTime) {
+      // First time user
+      text = `你好！我是 AIDJ，你的专属音乐 DJ 🎵 根据${rec.weatherContext}，我为你选了一首很棒的歌——《${rec.songName}》，${rec.artist}，希望你会喜欢 🎧`
+      markAsVisited()
+    } else {
+      // Returning user
+      text = `欢迎回来！根据你的品味，我为你准备了今日专属歌曲 🎵 让我为你播放...`
+    }
 
     const audioBase64 = await generateTTS(text)
 
     if (audioBase64) {
       const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`)
-      audio.onended = () => setIsAIDJSpeaking(false)
+      audio.onended = () => {
+        setIsAIDJSpeaking(false)
+        if (!isFirstTime) {
+          showToast('success', '今日推荐已更新 🎵', toasts, setToasts)
+        }
+      }
       audio.onerror = () => setIsAIDJSpeaking(false)
       audio.play()
     } else {
