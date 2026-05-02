@@ -845,7 +845,7 @@ export default function MusicAgent() {
         </div>
 
         {/* Playlist */}
-        <div className="glass-panel p-4 mb-8 max-h-48 overflow-y-auto slide-up delay-6">
+        <div className="glass-panel p-4 mb-8 max-h-48 overflow-y-auto slide-up delay-6" style={{ overflow: 'visible' }}>
           <p className="hud-label mb-3">PLAYLIST</p>
           {playlistLoading ? (
             <div className="skeleton-lines">
@@ -854,7 +854,8 @@ export default function MusicAgent() {
               <div className="skeleton skeleton-text" style={{ width: '85%' }}></div>
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="h-full overflow-y-auto">
+              <div className="space-y-1">
               {playlist.map((item, idx) => (
               <div
                 key={item.id}
@@ -901,6 +902,7 @@ export default function MusicAgent() {
                 </div>
               </div>
             ))}
+            </div>
             </div>
           )}
         </div>
