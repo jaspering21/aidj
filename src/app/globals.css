@@ -1026,3 +1026,58 @@ body::after {
   width: 32px;
   height: 14px;
 }
+
+/* ============================================
+   AIDJ SPEAKING INDICATOR
+   ============================================ */
+
+.aidj-speaking-indicator {
+  position: fixed;
+  top: max(24px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 10, 18, 0.85);
+  backdrop-filter: blur(10px);
+  padding: 10px 20px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1001;
+  border: 1px solid rgba(0, 245, 255, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 245, 255, 0.1);
+}
+
+.aidj-speaking-indicator .icon {
+  width: 20px;
+  height: 20px;
+  color: rgba(0, 245, 255, 0.9);
+}
+
+.aidj-speaking-indicator .text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  color: rgba(232, 234, 240, 0.85);
+}
+
+/* Speaking animation */
+@keyframes speaking-wave {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.aidj-speaking-indicator .wave-bar {
+  width: 3px;
+  height: 16px;
+  background: linear-gradient(to top, rgba(0, 245, 255, 0.9), rgba(168, 85, 247, 0.6));
+  border-radius: 2px;
+  animation: speaking-wave 0.6s ease-in-out infinite;
+}
+
+.aidj-speaking-indicator .wave-bar:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.aidj-speaking-indicator .wave-bar:nth-child(3) {
+  animation-delay: 0.3s;
+}
