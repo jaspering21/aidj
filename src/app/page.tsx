@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import NeteaseLoginModal from './components/NeteaseLoginModal'
 import { withRetry } from '@/lib/retry'
+import { FiRefreshCw } from 'react-icons/fi'
 
 interface WeatherData {
   city: string
@@ -32,6 +33,18 @@ interface Toast {
   id: string
   type: 'error' | 'warning' | 'success' | 'info'
   message: string
+}
+
+interface RecommendationContext {
+  songId: string
+  songName: string
+  artist: string
+  mood: string
+  reason: string
+  weatherContext: string
+  youtubeId?: string
+  youtubeUrl?: string
+  neteaseUrl?: string
 }
 
 interface UserPreferences {
@@ -104,10 +117,11 @@ async function fetchWeatherByLocation(): Promise<WeatherData> {
 
 export default function MusicAgent() {
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isAIDJSpeaking, setIsAIDJSpeaking] = useState(false)
   const [progress, setProgress] = useState(0)
   const [volume, setVolume] = useState(70)
   const [weather, setWeather] = useState<WeatherData | null>(null)
-  const [recommendation, setRecommendation] = useState<SongRecommendation | null>(null)
+  const [recommendation, setRecommendation] = useState<RecommendationContext | null>(null)
   const [playlist, setPlaylist] = useState<PlaylistItem[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
@@ -334,6 +348,38 @@ export default function MusicAgent() {
         })
       ])
       setWeather(w)
+
+      // AIDJ Onboarding: Get recommendation and play welcome message
+      if (w && typeof window !== 'undefined') {
+        try {
+          const hour = new Date().getHours()
+          const weatherDesc = `${w.city}${w.description}`
+
+          const recRes = await fetch(`/api/recommendations?action=welcome&weather=${encodeURIComponent(JSON.stringify(w))}&hour=${hour}`)
+          const recData = await recRes.json()
+
+          if (recData.success && recData.data) {
+            const rec = recData.data
+            const recommendationCtx: RecommendationContext = {
+              songId: rec.songId,
+              songName: rec.songName,
+              artist: rec.artist,
+              mood: rec.mood,
+              reason: rec.reason,
+              weatherContext: weatherDesc
+            }
+
+            setRecommendation(recommendationCtx)
+
+            setTimeout(() => {
+              playWelcomeMessage(recommendationCtx)
+            }, 1000)
+          }
+        } catch (error) {
+          console.error('Failed to initialize recommendation:', error)
+        }
+      }
+
       if (rec?.success) {
         setRecommendation(rec.data)
       } else {
@@ -381,6 +427,67 @@ export default function MusicAgent() {
     setIsLoggedIn(true)
     setNickname(name)
     setShowLoginModal(false)
+  }
+
+  async function generateTTS(text: string): Promise<string> {
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      })
+      const data = await response.json()
+      return data.data?.audio || ''
+    } catch {
+      return ''
+    }
+  }
+
+  async function playWelcomeMessage(rec: RecommendationContext) {
+    setIsAIDJSpeaking(true)
+
+    const text = `你好！我是 AIDJ，你的专属音乐 DJ。根据${rec.weatherContext}，我为你选了一首很棒的歌——《${rec.songName}》，${rec.artist}，希望你会喜欢`
+
+    const audioBase64 = await generateTTS(text)
+
+    if (audioBase64) {
+      const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`)
+      audio.onended = () => setIsAIDJSpeaking(false)
+      audio.onerror = () => setIsAIDJSpeaking(false)
+      audio.play()
+    } else {
+      setIsAIDJSpeaking(false)
+    }
+  }
+
+  async function handleSkipSong() {
+    if (!recommendation) return
+
+    try {
+      const response = await fetch('/api/aidj?action=next', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'next',
+          excludeIds: [recommendation.songId]
+        })
+      })
+      const data = await response.json()
+
+      if (data.success && data.data) {
+        setRecommendation({
+          songId: data.data.songId,
+          songName: data.data.songName,
+          artist: data.data.artist,
+          mood: data.data.mood || '中性',
+          reason: data.data.reason || `为你换了一首《${data.data.songName}》`,
+          weatherContext: `${weather?.description || '当前'}天气`
+        })
+        showToast('info', '换了一首 🎵', toasts, setToasts)
+      }
+    } catch {
+      showToast('error', USER_FRIENDLY_ERRORS.playback, toasts, setToasts)
+    }
   }
 
   const fetchAudioUrl = async (songId: string): Promise<string | null> => {
@@ -572,6 +679,7 @@ export default function MusicAgent() {
       artist: item.artist,
       reason: '',
       mood: '',
+      weatherContext: weather ? `${weather.city}${weather.description}` : '',
       youtubeId: '',
       youtubeUrl: ''
     })
@@ -689,6 +797,18 @@ export default function MusicAgent() {
           </div>
         </div>
 
+        {/* Speaking Indicator */}
+        {isAIDJSpeaking && (
+          <div className="aidj-speaking-indicator">
+            <div className="wave-bars" style={{ display: 'flex', gap: '4px' }}>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+            </div>
+            <span className="text">AIDJ 在说话...</span>
+          </div>
+        )}
+
         {/* Central Clock - Dominant Element */}
         <div className="clock-container slide-up delay-1">
           <div className="clock-glow" />
@@ -777,6 +897,15 @@ export default function MusicAgent() {
             <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 18l8.5-6L6 6v12zm10-12v12h2V6z"/>
             </svg>
+          </button>
+
+          <button
+            onClick={handleSkipSong}
+            className="control-btn"
+            style={{ minWidth: '44px', minHeight: '44px' }}
+            title="换一首"
+          >
+            <FiRefreshCw size={20} />
           </button>
         </div>
 
