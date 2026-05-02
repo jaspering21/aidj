@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git commit)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/jasper/ClaudeCode/music-agent/aidj && npm run build && npx tsc --noEmit",
+            "timeout": 120,
+            "statusMessage": "Running build and type check..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "When working in the AIDJ project (/Users/jasper/ClaudeCode/music-agent/aidj), always use the multi-agent workflow:\n\n1. For any feature/bug task, invoke TeamLeader to orchestrate:\n   - TeamLeader creates task, assigns to Dev Agent\n   - Dev Agent implements\n   - Test Agent verifies\n   - Code Review Agent reviews\n   - Loop until all quality gates pass\n\n2. Agent team prompt files are located at:\n   - /Users/jasper/ClaudeCode/music-agent/aidj/TEAM_LEADER_PROMPT.md\n   - /Users/jasper/ClaudeCode/music-agent/aidj/DEVELOPMENT_AGENT_PROMPT.md\n   - /Users/jasper/ClaudeCode/music-agent/aidj/TESTING_AGENT_PROMPT.md\n   - /Users/jasper/ClaudeCode/music-agent/aidj/CODE_REVIEW_AGENT_PROMPT.md\n\n3. Current project state: Commercial-ready. All P0-P2 tasks completed:\n   - Error handling, input validation, retry logic, type safety\n   - Rate limiting, caching, loading states, user feedback\n   - Favorites, play history, preferences, Sentry\n\n4. Default workflow for any task:\n   TeamLeader → Dev Agent → Test Agent → Code Review Agent → (loop if needed) → Done\n\nDo not skip the agent cycle. Always delegate to the appropriate agent.",
+            "timeout": 30,
+            "statusMessage": "Loading AIDJ agent team context..."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(cd aidj && *)"
+    ]
+  }
+}
