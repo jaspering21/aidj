@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import NeteaseLoginModal from './components/NeteaseLoginModal'
 import { withRetry } from '@/lib/retry'
+import { saveFeedback } from '@/lib/feedback'
 import { FiRefreshCw } from 'react-icons/fi'
 
 interface WeatherData {
@@ -142,6 +143,7 @@ export default function MusicAgent() {
   const [preferredMood, setPreferredMood] = useState<string | undefined>(undefined)
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
   const [hasUsedBefore, setHasUsedBefore] = useState(false)
+  const [activeFeedbackBtn, setActiveFeedbackBtn] = useState<'like' | 'dislike' | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const progressInterval = useRef<NodeJS.Timeout | null>(null)
   const userInteractedRef = useRef(false)
@@ -518,6 +520,39 @@ export default function MusicAgent() {
     } catch {
       showToast('error', USER_FRIENDLY_ERRORS.playback, toasts, setToasts)
     }
+  }
+
+  const handleLike = () => {
+    if (!recommendation) return
+    saveFeedback({
+      songId: recommendation.songId,
+      songName: recommendation.songName,
+      artist: recommendation.artist,
+      action: 'like',
+      timestamp: Date.now(),
+      weatherContext: recommendation.weatherContext,
+      recommendedBy: 'weather'
+    })
+    setActiveFeedbackBtn('like')
+    setTimeout(() => setActiveFeedbackBtn(null), 300)
+    showToast('success', '感谢你的反馈！', toasts, setToasts)
+  }
+
+  const handleDislike = () => {
+    if (!recommendation) return
+    saveFeedback({
+      songId: recommendation.songId,
+      songName: recommendation.songName,
+      artist: recommendation.artist,
+      action: 'dislike',
+      timestamp: Date.now(),
+      weatherContext: recommendation.weatherContext,
+      recommendedBy: 'weather'
+    })
+    setActiveFeedbackBtn('dislike')
+    setTimeout(() => setActiveFeedbackBtn(null), 300)
+    showToast('info', '已换一首 🎵', toasts, setToasts)
+    handleSkipSong()
   }
 
   const fetchAudioUrl = async (songId: string): Promise<string | null> => {
@@ -937,6 +972,15 @@ export default function MusicAgent() {
           >
             <FiRefreshCw size={20} />
           </button>
+
+          <div className="feedback-buttons">
+            <button className={`feedback-btn like ${activeFeedbackBtn === 'like' ? 'active' : ''}`} onClick={handleLike} title="喜欢">
+              <span style={{ fontSize: '20px' }}>👍</span>
+            </button>
+            <button className={`feedback-btn dislike ${activeFeedbackBtn === 'dislike' ? 'active' : ''}`} onClick={handleDislike} title="不喜欢">
+              <span style={{ fontSize: '20px' }}>👎</span>
+            </button>
+          </div>
         </div>
 
         {/* Volume */}
