@@ -1109,3 +1109,62 @@ body::after {
     box-shadow: 0 0 16px rgba(0,245,255,0.4);
   }
 }
+
+/* ============================================
+   FEEDBACK BUTTONS
+   ============================================ */
+
+.feedback-buttons {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.feedback-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.5;
+}
+
+.feedback-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.feedback-btn:active {
+  transform: scale(0.95);
+}
+
+.feedback-btn.like {
+  color: #10B981;
+}
+
+.feedback-btn.like:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.feedback-btn.dislike {
+  color: #EF4444;
+}
+
+.feedback-btn.dislike:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.feedback-btn.active {
+  animation: feedback-pop 0.3s ease;
+}
+
+@keyframes feedback-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
