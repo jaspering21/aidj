@@ -27,6 +27,13 @@ const RATE_LIMITS: Record<string, RateLimitConfig> = {
 const requestCounts = new Map<string, RateLimitEntry>()
 
 /**
+ * Clear rate limit store (for testing)
+ */
+export function clearRateLimitStore(): void {
+  requestCounts.clear()
+}
+
+/**
  * Generate cache key from IP and endpoint
  */
 function getCacheKey(ip: string, endpoint: string): string {
