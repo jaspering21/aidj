@@ -1081,3 +1081,31 @@ body::after {
 .aidj-speaking-indicator .wave-bar:nth-child(3) {
   animation-delay: 0.3s;
 }
+
+/* ============================================
+   DAILY BADGE - 今日专属标签
+   ============================================ */
+
+.daily-badge {
+  display: inline-flex;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, rgba(0,245,255,0.15), rgba(168,85,247,0.15));
+  border: 1px solid rgba(0,245,255,0.3);
+  border-radius: 20px;
+  animation: badge-glow 3s ease-in-out infinite;
+}
+
+.daily-badge span {
+  font-size: 11px;
+  color: rgba(0,245,255,0.9);
+  letter-spacing: 0.5px;
+}
+
+@keyframes badge-glow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(0,245,255,0.2);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0,245,255,0.4);
+  }
+}
