@@ -1005,7 +1005,12 @@ export default function MusicAgent() {
 
         {/* Playlist */}
         <div className="glass-panel p-4 mb-8 max-h-48 overflow-y-auto slide-up delay-6" style={{ overflow: 'visible' }}>
-          <p className="hud-label mb-3">PLAYLIST</p>
+          <div className="flex items-center gap-2 mb-3">
+          <p className="hud-label">PLAYLIST</p>
+          <div className="daily-badge">
+            <span>今日专属</span>
+          </div>
+        </div>
           {playlistLoading ? (
             <div className="skeleton-lines">
               <div className="skeleton skeleton-text" style={{ width: '90%' }}></div>
