@@ -28,6 +28,7 @@
     ]
   },
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(npm *)",
       "Bash(npx *)",
