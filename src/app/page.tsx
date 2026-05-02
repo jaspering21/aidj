@@ -117,7 +117,13 @@ export default function MusicAgent() {
 
   // Track user interaction for auto-play
   useEffect(() => {
-    const handler = () => { userInteractedRef.current = true }
+    const handler = () => {
+      userInteractedRef.current = true
+      // On first user interaction, play welcome message if not played yet
+      if (recommendation && !isAIDJSpeaking) {
+        playWelcomeMessage(recommendation)
+      }
+    }
     window.addEventListener('click', handler, { once: true })
     window.addEventListener('touchstart', handler, { once: true })
     window.addEventListener('keydown', handler, { once: true })
@@ -126,7 +132,7 @@ export default function MusicAgent() {
       window.removeEventListener('touchstart', handler)
       window.removeEventListener('keydown', handler)
     }
-  }, [])
+  }, [recommendation, isAIDJSpeaking])
 
   // Auto-play
   useEffect(() => {
@@ -259,7 +265,7 @@ export default function MusicAgent() {
               weatherContext: weatherDesc
             }
             setRecommendation(recommendationCtx)
-            setTimeout(() => playWelcomeMessage(recommendationCtx), 1000)
+            // Don't auto-play welcome message here - let user interaction handler do it
           }
         } catch (error) { console.error('Failed to initialize recommendation:', error) }
       }
@@ -316,13 +322,25 @@ export default function MusicAgent() {
 
     const audioBase64 = await generateTTS(text)
     if (audioBase64) {
-      const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`)
-      audio.oncanplay = () => audio.play().catch(() => setIsAIDJSpeaking(false))
+      const audio = new Audio()
       audio.onended = () => {
         setIsAIDJSpeaking(false)
         if (!isFirstTime) showToast('success', '今日推荐已更新 🎵', toasts, setToasts)
       }
-      audio.onerror = () => setIsAIDJSpeaking(false)
+      audio.onerror = (e) => {
+        console.error('[TTS] audio error:', e)
+        setIsAIDJSpeaking(false)
+      }
+      audio.oncanplay = async () => {
+        try {
+          await audio.play()
+        } catch (err) {
+          console.error('[TTS] play error:', err)
+          setIsAIDJSpeaking(false)
+        }
+      }
+      audio.src = `data:audio/mp3;base64,${audioBase64}`
+      audio.load()
     } else {
       setIsAIDJSpeaking(false)
     }
