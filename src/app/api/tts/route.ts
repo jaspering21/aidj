@@ -2,11 +2,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { spawn } from 'child_process'
-import { promisify } from 'util'
 import { safeError, validateStringLength } from '@/lib/errors'
 import { checkRateLimit, logRateLimitViolation, getClientIp } from '@/lib/rate-limit'
 
-const exec = promisify(spawn)
+const exec = null // removed promisify
 
 interface TtsRequest {
   text?: unknown
@@ -17,29 +16,50 @@ interface TtsResponse {
 }
 
 async function generateSpeech(text: string): Promise<string> {
-  try {
+  return new Promise((resolve) => {
+    const tmpFile = `/tmp/tts_${Date.now()}.mp3`
     const pyScript = `
 import asyncio
 import edge_tts
+
 async def main():
-    comm = edge_tts.Communicator(${JSON.stringify(text)}, "zh-CN-XiaoxiaoNeural")
+    comm = edge_tts.Communicate(${JSON.stringify(text)}, "zh-CN-XiaoxiaoNeural")
     audio = b""
     async for chunk in comm.stream():
         if chunk["type"] == "audio":
             audio += chunk["data"]
-    import sys
-    sys.stdout.buffer.write(audio)
+    with open("${tmpFile}", "wb") as f:
+        f.write(audio)
+
 asyncio.run(main())
 `
-    const result = await exec('python3', ['-c', pyScript], {
-      timeout: 15000
-    }) as { stdout: Buffer }
-    const audioBuffer = result.stdout
-    return audioBuffer.toString('base64')
-  } catch (err) {
-    console.error('[TTS] action=generate_speech error=', err)
-    return ''
-  }
+    const child = spawn('python3', ['-c', pyScript])
+    let stderr = ''
+    child.stderr.on('data', (d) => { stderr += d.toString() })
+
+    const timeout = setTimeout(() => {
+      child.kill()
+      console.error('[TTS] timeout, stderr:', stderr)
+      resolve('')
+    }, 12000)
+
+    child.on('close', (code) => {
+      clearTimeout(timeout)
+      if (code !== 0) {
+        console.error('[TTS] python exited with code', code, 'stderr:', stderr)
+        resolve('')
+        return
+      }
+      try {
+        const audioBuffer = require('fs').readFileSync(tmpFile)
+        require('fs').unlinkSync(tmpFile)
+        resolve(audioBuffer.toString('base64'))
+      } catch (err) {
+        console.error('[TTS] file read error:', err)
+        resolve('')
+      }
+    })
+  })
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

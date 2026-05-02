@@ -151,7 +151,7 @@ function getMiniMaxKey(): string {
 
 function getPlaylist(): SongItem[] {
   if (playlistCache) return playlistCache
-  const content = readFileSync(join(process.cwd(), '../playlist_2205555594.txt'), 'utf-8')
+  const content = readFileSync(join(process.cwd(), 'public', 'playlist_2205555594.txt'), 'utf-8')
   const lines = content.split('\n').filter(l => /^\d+\.\s/.test(l))
   playlistCache = lines.map(line => {
     const parts = line.split(';;;')
