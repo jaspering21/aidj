@@ -1,6 +1,6 @@
 import https from 'https'
 import { IncomingMessage } from 'http'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
@@ -12,6 +12,11 @@ export const SECRETS_FILE = join(homedir(), '.aidj', 'secrets.json')
 export const PLAYLIST_ID = '2205555594'
 export const TEST_SONG_ID = 476527848
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+
+// Retry configuration
+const MAX_RETRIES = 3
+const INITIAL_DELAY_MS = 500
+const MAX_DELAY_MS = 5000
 
 export interface NeteaseSession {
   cookie: string
@@ -110,14 +115,43 @@ export interface HttpResponse {
   data: string
 }
 
-export function httpRequest(options: HttpRequestOptions, postData?: string): Promise<string> {
+/**
+ * Sleep utility for retry delays
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * HTTP request with exponential backoff retry
+ * Retries on network failures and 5xx errors
+ */
+export function httpRequest(options: HttpRequestOptions, postData?: string, retryCount = 0): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = https.request(options, (res: IncomingMessage) => {
+      // Retry on 5xx errors
+      if (res.statusCode && res.statusCode >= 500 && retryCount < MAX_RETRIES) {
+        const delay = Math.min(INITIAL_DELAY_MS * Math.pow(2, retryCount), MAX_DELAY_MS)
+        console.log(`HTTP ${res.statusCode}, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+        sleep(delay).then(() => resolve(httpRequest(options, postData, retryCount + 1)))
+        return
+      }
+
       let data = ''
       res.on('data', (chunk: string) => data += chunk)
       res.on('end', () => resolve(data))
     })
-    req.on('error', reject)
+
+    req.on('error', (err) => {
+      if (retryCount < MAX_RETRIES) {
+        const delay = Math.min(INITIAL_DELAY_MS * Math.pow(2, retryCount), MAX_DELAY_MS)
+        console.log(`Network error: ${err.message}, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`)
+        sleep(delay).then(() => resolve(httpRequest(options, postData, retryCount + 1)))
+      } else {
+        reject(err)
+      }
+    })
+
     if (postData) req.write(postData)
     req.end()
   })

@@ -28,11 +28,18 @@ interface PlaylistItem {
   artist: string
 }
 
-interface ErrorState {
-  weather: string | null
-  recommendation: string | null
-  playlist: string | null
-  chat: string | null
+interface Toast {
+  id: string
+  type: 'error' | 'warning' | 'success' | 'info'
+  message: string
+}
+
+interface UserPreferences {
+  volume: number
+  lastPlayedSongId?: string
+  preferredMood?: string
+  autoPlay: boolean
+  ttsEnabled: boolean
 }
 
 const conditionIcons: Record<string, string> = {
@@ -40,6 +47,22 @@ const conditionIcons: Record<string, string> = {
   cloudy: '⛅',
   rainy: '🌧️',
   snowy: '❄️'
+}
+
+const USER_FRIENDLY_ERRORS = {
+  network: '网络连接不稳定，请检查网络',
+  timeout: '服务响应较慢，请稍后重试',
+  playback: '该歌曲暂时无法播放，将为你切换下一首',
+  playlist: '播放列表加载失败，请刷新重试',
+  chat: '消息发送失败，请稍后再试'
+}
+
+function showToast(type: Toast['type'], message: string, toasts: Toast[], setToasts: React.Dispatch<React.SetStateAction<Toast[]>>) {
+  const id = Date.now().toString()
+  setToasts([...toasts, { id, type, message }])
+  setTimeout(() => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, 4000)
 }
 
 async function fetchWeatherByLocation(): Promise<WeatherData> {
@@ -92,12 +115,7 @@ export default function MusicAgent() {
   const [recommendationLoading, setRecommendationLoading] = useState(true)
   const [playlistLoading, setPlaylistLoading] = useState(true)
   const [chatLoading, setChatLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState<ErrorState>({
-    weather: null,
-    recommendation: null,
-    playlist: null,
-    chat: null
-  })
+  const [toasts, setToasts] = useState<Toast[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatHistory, setChatHistory] = useState<{role: 'user' | 'aidj'; text: string}[]>([])
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -105,6 +123,10 @@ export default function MusicAgent() {
   const [nickname, setNickname] = useState('')
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
+  const [autoPlay, setAutoPlay] = useState(true)
+  const [ttsEnabled, setTtsEnabled] = useState(true)
+  const [preferredMood, setPreferredMood] = useState<string | undefined>(undefined)
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const progressInterval = useRef<NodeJS.Timeout | null>(null)
   const userInteractedRef = useRef(false)
@@ -181,13 +203,92 @@ export default function MusicAgent() {
     }
   }, [volume])
 
+  // Save volume preference when it changes
+  useEffect(() => {
+    const saveVolume = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ volume })
+        })
+      } catch (e) {
+        console.error('Failed to save volume preference:', e)
+      }
+    }
+    saveVolume()
+  }, [volume])
+
+  // Save autoPlay preference when it changes
+  useEffect(() => {
+    const saveAutoPlay = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ autoPlay })
+        })
+      } catch (e) {
+        console.error('Failed to save autoPlay preference:', e)
+      }
+    }
+    saveAutoPlay()
+  }, [autoPlay])
+
+  // Save ttsEnabled preference when it changes
+  useEffect(() => {
+    const saveTts = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ttsEnabled })
+        })
+      } catch (e) {
+        console.error('Failed to save ttsEnabled preference:', e)
+      }
+    }
+    saveTts()
+  }, [ttsEnabled])
+
+  // Save preferredMood preference when it changes
+  useEffect(() => {
+    const saveMood = async () => {
+      try {
+        await fetch('/api/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preferredMood })
+        })
+      } catch (e) {
+        console.error('Failed to save preferredMood preference:', e)
+      }
+    }
+    saveMood()
+  }, [preferredMood])
+
   const init = async () => {
     setIsLoading(true)
     setWeatherLoading(true)
     setRecommendationLoading(true)
     setPlaylistLoading(true)
-    setErrorMessage({ weather: null, recommendation: null, playlist: null, chat: null })
     try {
+      // Load user preferences
+      try {
+        const prefsRes = await fetch('/api/preferences')
+        if (prefsRes.ok) {
+          const prefsData = await prefsRes.json()
+          if (prefsData.success && prefsData.data) {
+            setVolume(prefsData.data.volume ?? 70)
+            setAutoPlay(prefsData.data.autoPlay ?? true)
+            setTtsEnabled(prefsData.data.ttsEnabled ?? true)
+            setPreferredMood(prefsData.data.preferredMood)
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load preferences:', e)
+      }
+
       const loginRes = await fetch('/api/netease-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,26 +302,48 @@ export default function MusicAgent() {
         setShowLoginModal(true)
       }
 
+      // Load favorites
+      try {
+        const favRes = await fetch('/api/favorites')
+        if (favRes.ok) {
+          const favData = await favRes.json()
+          if (favData.success && favData.data) {
+            setFavoriteIds(new Set(favData.data.map((f: { songId: string }) => f.songId)))
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load favorites:', e)
+      }
+
       const [w, rec] = await Promise.all([
         fetchWeatherByLocation().then(data => {
           setWeatherLoading(false)
           return data
+        }).catch(() => {
+          setWeatherLoading(false)
+          return null
         }),
         fetch('/api/aidj?action=recommend').then(async r => {
+          if (!r.ok) throw new Error('network')
           const data = await r.json()
           setRecommendationLoading(false)
           return data
+        }).catch(() => {
+          setRecommendationLoading(false)
+          return null
         })
       ])
       setWeather(w)
-      if (rec.success) {
+      if (rec?.success) {
         setRecommendation(rec.data)
       } else {
-        setErrorMessage(prev => ({ ...prev, recommendation: 'Failed to load recommendation. Please try again.' }))
+        showToast('error', USER_FRIENDLY_ERRORS.network, toasts, setToasts)
       }
 
       setPlaylistLoading(true)
-      const lines = await fetch('/playlist_2205555594.txt').then(r => r.text())
+      const lines = await fetch('/playlist_2205555594.txt').then(r => r.text()).catch(() => {
+        throw new Error('playlist')
+      })
       const items: PlaylistItem[] = lines.split('\n')
         .filter(l => /^\d+\.\s/.test(l))
         .slice(0, 20)
@@ -237,12 +360,15 @@ export default function MusicAgent() {
         }).filter(Boolean) as PlaylistItem[]
       setPlaylist(items)
       setPlaylistLoading(false)
-    } catch (err) {
-      setErrorMessage(prev => ({
-        ...prev,
-        recommendation: 'Failed to load. Please try again.',
-        playlist: 'Failed to load playlist.'
-      }))
+    } catch (err: unknown) {
+      const error = err as Error
+      if (error.message === 'network') {
+        showToast('error', USER_FRIENDLY_ERRORS.network, toasts, setToasts)
+      } else if (error.message === 'playlist') {
+        showToast('error', USER_FRIENDLY_ERRORS.playlist, toasts, setToasts)
+      } else {
+        showToast('error', USER_FRIENDLY_ERRORS.network, toasts, setToasts)
+      }
     } finally {
       setIsLoading(false)
       setWeatherLoading(false)
@@ -279,7 +405,8 @@ export default function MusicAgent() {
   const tryPlaySong = async (songId: string, attempts = 0): Promise<boolean> => {
     const maxAttempts = 3
     if (attempts >= maxAttempts) {
-      setChatHistory(prev => [...prev, { role: 'aidj', text: '抱歉，这几首歌暂时都无法播放，请尝试其他歌曲。' }])
+      showToast('warning', USER_FRIENDLY_ERRORS.playback, toasts, setToasts)
+      setChatHistory(prev => [...prev, { role: 'aidj', text: USER_FRIENDLY_ERRORS.playback }])
       return false
     }
 
@@ -319,6 +446,31 @@ export default function MusicAgent() {
       try {
         await audioRef.current.play()
         setIsPlaying(true)
+        // Add to play history
+        try {
+          await fetch('/api/play-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              songId: songId,
+              songName: recommendation?.songName || '',
+              artist: recommendation?.artist || '',
+              playedAt: Date.now()
+            })
+          })
+        } catch (e) {
+          console.error('Failed to add to play history:', e)
+        }
+        // Save lastPlayedSongId preference
+        try {
+          await fetch('/api/preferences', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lastPlayedSongId: songId })
+          })
+        } catch (e) {
+          console.error('Failed to save lastPlayedSongId preference:', e)
+        }
         return true
       } catch (err) {
         console.error('Playback failed:', err)
@@ -383,13 +535,13 @@ export default function MusicAgent() {
     setChatInput('')
     setChatHistory(prev => [...prev, { role: 'user', text: msg }])
     setChatLoading(true)
-    setErrorMessage(prev => ({ ...prev, chat: null }))
     try {
       const res = await fetch('/api/aidj', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'chat', message: msg })
       })
+      if (!res.ok) throw new Error('timeout')
       const data = await res.json()
       if (data.success) {
         setChatHistory(prev => [...prev, { role: 'aidj', text: data.data.reply }])
@@ -401,7 +553,7 @@ export default function MusicAgent() {
         setChatHistory(prev => [...prev, { role: 'aidj', text: '抱歉，DJ暂时无法回应，请稍后再试。' }])
       }
     } catch (err) {
-      setErrorMessage(prev => ({ ...prev, chat: 'Failed to send message. Please try again.' }))
+      showToast('error', USER_FRIENDLY_ERRORS.chat, toasts, setToasts)
     } finally {
       setChatLoading(false)
     }
@@ -428,6 +580,29 @@ export default function MusicAgent() {
     playlistPlayRef.current = false
   }
 
+  const toggleFavorite = async (songId: string, songName: string, artist: string) => {
+    const isFav = favoriteIds.has(songId)
+    try {
+      if (isFav) {
+        await fetch(`/api/favorites?id=${encodeURIComponent(songId)}`, { method: 'DELETE' })
+        setFavoriteIds(prev => {
+          const next = new Set(prev)
+          next.delete(songId)
+          return next
+        })
+      } else {
+        await fetch('/api/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ songId, songName, artist, addedAt: Date.now() })
+        })
+        setFavoriteIds(prev => new Set(prev).add(songId))
+      }
+    } catch (e) {
+      console.error('Failed to toggle favorite:', e)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center relative z-10">
@@ -448,6 +623,22 @@ export default function MusicAgent() {
       <div className="ambient-light-secondary" />
       <div className="ambient-light-tertiary" />
       <div className="scanlines" />
+
+      {/* Toast Container */}
+      <div className="toast-container">
+        {toasts.map(toast => (
+          <div key={toast.id} className={`toast toast-${toast.type}`}>
+            <span className="toast-icon">
+              {toast.type === 'error' && '⚠️'}
+              {toast.type === 'warning' && '⚡'}
+              {toast.type === 'success' && '✓'}
+              {toast.type === 'info' && 'ℹ️'}
+            </span>
+            <span className="toast-message">{toast.message}</span>
+            <button className="toast-close" onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}>×</button>
+          </div>
+        ))}
+      </div>
 
       {/* Main container */}
       <div className="min-h-screen flex flex-col max-w-md mx-auto px-6 py-8 relative z-10">
@@ -485,17 +676,15 @@ export default function MusicAgent() {
           {/* Right - Weather */}
           <div className="flex items-center gap-2">
             {weatherLoading ? (
-              <div className="flex items-center gap-2 animate-pulse">
-                <div className="w-4 h-4 rounded-full bg-gray-700" />
-                <div className="w-8 h-4 rounded bg-gray-700" />
+              <div className="weather-skeleton">
+                <div className="skeleton weather-skeleton-icon" />
+                <div className="skeleton weather-skeleton-text" />
               </div>
             ) : weather ? (
               <>
                 <span className="weather-icon">{conditionIcons[weather.condition]}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{weather.temperature}°</span>
               </>
-            ) : errorMessage.weather ? (
-              <span style={{ color: 'var(--neon-magenta)', fontSize: '0.7rem' }}>Weather unavailable</span>
             ) : null}
           </div>
         </div>
@@ -524,20 +713,36 @@ export default function MusicAgent() {
           </div>
 
           {recommendationLoading ? (
-            <div className="animate-pulse">
-              <div className="h-5 bg-gray-700 rounded w-3/4 mb-2"></div>
-              <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+            <div className="skeleton-lines">
+              <div className="skeleton skeleton-text title"></div>
+              <div className="skeleton skeleton-text subtitle"></div>
             </div>
-          ) : errorMessage.recommendation ? (
-            <p style={{ color: 'var(--neon-magenta)', fontSize: '0.85rem' }}>{errorMessage.recommendation}</p>
           ) : (
             <>
-              <h2 className="font-display text-lg mb-1 truncate tracking-wide" style={{ color: 'var(--text-primary)' }}>
+              <h2 className="font-display text-lg mb-1 truncate tracking-wide song-title" style={{ color: 'var(--text-primary)' }}>
                 {recommendation?.songName || '---'}
               </h2>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                 {recommendation?.artist || '未知歌手'}
               </p>
+              {recommendation?.songId && (
+                <button
+                  onClick={() => toggleFavorite(recommendation.songId, recommendation.songName, recommendation.artist)}
+                  style={{
+                    marginTop: '0.5rem',
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '1rem',
+                    border: `1px solid ${favoriteIds.has(recommendation.songId) ? 'var(--neon-pink)' : 'var(--text-muted)'}`,
+                    background: favoriteIds.has(recommendation.songId) ? 'rgba(236, 72, 153, 0.2)' : 'transparent',
+                    color: favoriteIds.has(recommendation.songId) ? 'var(--neon-pink)' : 'var(--text-muted)',
+                    fontSize: '0.7rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {favoriteIds.has(recommendation.songId) ? '♥ 已收藏' : '♡ 收藏'}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -553,9 +758,11 @@ export default function MusicAgent() {
           <button
             onClick={handlePlayPause}
             className={`control-btn-play ${isPlaying ? 'playing' : ''}`}
-            disabled={!isLoggedIn}
+            disabled={!isLoggedIn || !recommendation?.songId}
           >
-            {isPlaying ? (
+            {!recommendation?.songId ? (
+              <div className="loading-spinner" />
+            ) : isPlaying ? (
               <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 4h4v16H6zm8 0h4v16h-4z"/>
               </svg>
@@ -604,15 +811,14 @@ export default function MusicAgent() {
               </p>
             )}
             {chatLoading && (
-              <div className="animate-pulse">
-                <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
-                <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+              <div className="chat-bubble chat-bubble-ai">
+                <div className="chat-role ai-label">DJ</div>
+                <div className="thinking-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
               </div>
-            )}
-            {chatLoading && (
-              <p className="text-sm text-center" style={{ color: 'var(--neon-purple)', fontSize: '0.75rem' }}>
-                DJ is thinking...
-              </p>
             )}
             {chatHistory.map((msg, idx) => (
               <div
@@ -642,13 +848,11 @@ export default function MusicAgent() {
         <div className="glass-panel p-4 mb-8 max-h-48 overflow-y-auto slide-up delay-6">
           <p className="hud-label mb-3">PLAYLIST</p>
           {playlistLoading ? (
-            <div className="animate-pulse space-y-2">
-              <div className="h-4 bg-gray-700 rounded w-full mb-2"></div>
-              <div className="h-4 bg-gray-700 rounded w-5/6 mb-2"></div>
-              <div className="h-4 bg-gray-700 rounded w-4/5"></div>
+            <div className="skeleton-lines">
+              <div className="skeleton skeleton-text" style={{ width: '90%' }}></div>
+              <div className="skeleton skeleton-text" style={{ width: '80%' }}></div>
+              <div className="skeleton skeleton-text" style={{ width: '85%' }}></div>
             </div>
-          ) : errorMessage.playlist ? (
-            <p style={{ color: 'var(--neon-magenta)', fontSize: '0.85rem' }}>{errorMessage.playlist}</p>
           ) : (
             <div className="space-y-1">
               {playlist.map((item, idx) => (
@@ -673,6 +877,22 @@ export default function MusicAgent() {
                     </p>
                     <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.artist}</p>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleFavorite(item.id, item.songName, item.artist)
+                    }}
+                    style={{
+                      padding: '0.25rem',
+                      color: favoriteIds.has(item.id) ? 'var(--neon-pink)' : 'var(--text-muted)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    {favoriteIds.has(item.id) ? '♥' : '♡'}
+                  </button>
                   {currentIndex === idx && isPlaying && (
                     <div className="sound-bar">
                       <span /><span /><span /><span />

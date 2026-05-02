@@ -1,28 +1,25 @@
 'use server'
 
+import * as Sentry from '@sentry/nextjs'
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { NextRequest, NextResponse } from 'next/server'
-import { getStoredSession, httpRequest, NETEASE_API, PLAYLIST_ID, THIRTY_DAYS_MS } from '@/lib/netease'
 import { exec as execSync } from 'child_process'
 import { promisify } from 'util'
-import { spawn } from 'child_process'
+import { checkRateLimit, logRateLimitViolation, getClientIp } from '@/lib/rate-limit'
+import { safeError, validateEnum, validateNumberRange, validateStringLength } from '@/lib/errors'
+import {
+  getCachedWeather,
+  setCachedWeather,
+  getCachedRecommendation,
+  setCachedRecommendation,
+  generateRecommendationKey,
+  getCachedYouTube,
+  setCachedYouTube
+} from '@/lib/cache'
+
 const exec = promisify(execSync)
-
-function getMiniMaxKey(): string {
-  const secretsPath = join(homedir(), '.aidj', 'secrets.json')
-  if (existsSync(secretsPath)) {
-    try {
-      const content = readFileSync(secretsPath, 'utf-8')
-      const data = JSON.parse(content)
-      return data.minimax_api_key || ''
-    } catch { return '' }
-  }
-  return ''
-}
-
-const MINIMAX_API_KEY = getMiniMaxKey()
 
 interface WeatherData {
   city: string
@@ -48,7 +45,31 @@ interface SongRecommendation {
   youtubeId: string
 }
 
+interface AidjRequest {
+  action: unknown
+  songId?: unknown
+  message?: unknown
+  excludeIds?: unknown
+}
+
+interface PlayResponse {
+  songId: string
+  songName: string
+  artist: string
+  youtubeId: string
+  youtubeUrl: string
+  playing: boolean
+  reason: string
+  mood: string
+}
+
+interface ChatResponse {
+  reply: string
+  audio: string
+}
+
 async function miniMaxChat(messages: Array<{role: string; content: string}>, maxTokens: number = 200): Promise<string> {
+  const MINIMAX_API_KEY = getMiniMaxKey()
   if (!MINIMAX_API_KEY) return ''
   try {
     const response = await fetch(`${'https://api.minimax.chat'}/v1/text/chatcompletion_v2`, {
@@ -65,15 +86,17 @@ async function miniMaxChat(messages: Array<{role: string; content: string}>, max
     })
     const data = await response.json()
     return data.choices?.[0]?.message?.content || ''
-  } catch {
+  } catch (e) {
+    console.error('[AIDJ] action=mini_max_chat error=', e)
     return ''
   }
 }
 
 async function generateMiniMaxTTS(text: string): Promise<string> {
+  const MINIMAX_API_KEY = getMiniMaxKey()
   return new Promise((resolve) => {
     if (!MINIMAX_API_KEY) {
-      console.error('TTS: No API key available')
+      console.error('[AIDJ] TTS: No API key available')
       resolve('')
       return
     }
@@ -87,7 +110,7 @@ async function generateMiniMaxTTS(text: string): Promise<string> {
       const escapedText = text.replace(/'/g, "'\\''")
       const cmd = `node "${scriptPath}" '${MINIMAX_API_KEY}' '${escapedText}' ${tmpFile}`
 
-      console.log('TTS: Generating audio for text:', text.substring(0, 50))
+      console.log('[AIDJ] TTS: Generating audio for text:', text.substring(0, 50))
 
       execSync(cmd, {
         timeout: 20000,
@@ -98,14 +121,14 @@ async function generateMiniMaxTTS(text: string): Promise<string> {
         const audioBuffer = readFileSync(tmpFile)
         try { require('fs').unlinkSync(tmpFile) } catch { }
         const base64 = audioBuffer.toString('base64')
-        console.log('TTS: Generated audio, base64 length:', base64.length)
+        console.log('[AIDJ] TTS: Generated audio, base64 length:', base64.length)
         resolve(base64)
       } else {
-        console.error('TTS: Output file not created')
+        console.error('[AIDJ] TTS: Output file not created')
         resolve('')
       }
     } catch (e) {
-      console.error('TTS error:', (e as Error).message || e)
+      console.error('[AIDJ] TTS error:', (e as Error).message || e)
       resolve('')
     }
   })
@@ -113,6 +136,18 @@ async function generateMiniMaxTTS(text: string): Promise<string> {
 
 let playlistCache: SongItem[] | null = null
 let currentPlayingSong: SongRecommendation | null = null
+
+function getMiniMaxKey(): string {
+  const secretsPath = join(homedir(), '.aidj', 'secrets.json')
+  if (existsSync(secretsPath)) {
+    try {
+      const content = readFileSync(secretsPath, 'utf-8')
+      const data = JSON.parse(content)
+      return data.minimax_api_key || ''
+    } catch { return '' }
+  }
+  return ''
+}
 
 function getPlaylist(): SongItem[] {
   if (playlistCache) return playlistCache
@@ -147,8 +182,6 @@ function inferMood(name: string, artist: string): string {
   return '中性'
 }
 
-let weatherCache: { data: WeatherData; expiry: number } | null = null
-
 function getWeatherByCity(city: string): WeatherData {
   const hour = new Date().getHours()
   const conditions: Array<{ condition: WeatherData['condition']; description: string }> = [
@@ -161,15 +194,22 @@ function getWeatherByCity(city: string): WeatherData {
 }
 
 function getWeather(): WeatherData {
-  const now = Date.now()
-  if (weatherCache && weatherCache.expiry > now) return weatherCache.data
+  // Try cache first
+  const cached = getCachedWeather()
+  if (cached) return cached
+
+  // Generate and cache new weather data
   const data = getWeatherByCity('北京')
-  weatherCache = { data, expiry: now + 5 * 60 * 1000 }
+  setCachedWeather(data)
   return data
 }
 
 async function searchYouTube(songName: string, artist: string): Promise<{youtubeId: string; youtubeUrl: string}> {
-  return new Promise((resolve) => {
+  // Check cache first
+  const cached = getCachedYouTube(songName, artist)
+  if (cached) return cached
+
+  const result = await new Promise<{youtubeId: string; youtubeUrl: string}>((resolve) => {
     try {
       const { YouTube } = require('youtube-search')
       const opts = { part: ['id'], maxResults: 1, key: '' }
@@ -187,11 +227,22 @@ async function searchYouTube(songName: string, artist: string): Promise<{youtube
       })
     }
   })
+
+  // Cache the result permanently
+  setCachedYouTube(songName, artist, result)
+  return result
 }
 
 async function getRecommendation(weather: WeatherData, excludeIds: string[] = []): Promise<SongRecommendation> {
-  const playlist = getPlaylist()
+  // Generate cache key based on weather condition, hour, and excludeIds
   const hour = new Date().getHours()
+  const cacheKey = generateRecommendationKey(weather.condition, hour, excludeIds)
+
+  // Check cache first
+  const cached = getCachedRecommendation(cacheKey)
+  if (cached) return cached as SongRecommendation
+
+  const playlist = getPlaylist()
 
   const timeMoods = hour < 12 ? ['清新', '轻快', '民谣'] : hour < 18 ? ['放松', '流行', '活力'] : ['夜晚', '安静', '抒情']
   const weatherMoodMap: Record<string, string[]> = {
@@ -228,15 +279,34 @@ async function getRecommendation(weather: WeatherData, excludeIds: string[] = []
     youtubeId: yt.youtubeId,
     youtubeUrl: yt.youtubeUrl
   }
+
+  // Cache the recommendation (5 minute TTL via setCachedRecommendation)
+  setCachedRecommendation(cacheKey, recommendation)
+
   currentPlayingSong = recommendation
   return recommendation
 }
 
-import { safeError, validateEnum, validateNumberRange, validateStringLength } from '@/lib/errors'
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const startTime = Date.now()
+  const ip = getClientIp(request)
 
-export async function GET(request: NextRequest) {
+  // Rate limit check
+  const rateLimit = checkRateLimit(ip, '/api/aidj')
+  if (!rateLimit.allowed) {
+    logRateLimitViolation(ip, '/api/aidj')
+    const retryAfter = Math.ceil(rateLimit.resetMs / 1000)
+    return NextResponse.json(
+      { success: false, error: '请求过于频繁，请稍后再试', retryAfter },
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+    )
+  }
+
   try {
     const action = request.nextUrl.searchParams.get('action') || 'status'
+
+    console.log(`[AIDJ] action=${action} method=GET duration_ms=${Date.now() - startTime}`)
+
     if (!validateEnum(action, ['weather', 'recommend', 'status'])) {
       return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
     }
@@ -246,15 +316,38 @@ export async function GET(request: NextRequest) {
       case 'status': return NextResponse.json({ success: true, data: { playing: false, currentSong: null, weather: getWeather() } })
       default: return NextResponse.json(safeError('Invalid action', 400), { status: 400 })
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, { contexts: { route: { path: '/api/aidj', method: 'GET' } } })
     return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const startTime = Date.now()
+  const ip = getClientIp(request)
+
+  // Rate limit check
+  const rateLimit = checkRateLimit(ip, '/api/aidj')
+  if (!rateLimit.allowed) {
+    logRateLimitViolation(ip, '/api/aidj')
+    const retryAfter = Math.ceil(rateLimit.resetMs / 1000)
+    return NextResponse.json(
+      { success: false, error: '请求过于频繁，请稍后再试', retryAfter },
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+    )
+  }
+
+  let body: AidjRequest
   try {
-    const body = await request.json()
+    body = await request.json()
+  } catch {
+    return NextResponse.json(safeError('Invalid request format', 400), { status: 400 })
+  }
+
+  try {
     const { action, songId, message, excludeIds } = body
+
+    console.log(`[AIDJ] action=${action} method=POST duration_ms=${Date.now() - startTime}`)
 
     // Validate action
     if (!validateEnum(action, ['play', 'next', 'chat'])) {
@@ -291,32 +384,27 @@ export async function POST(request: NextRequest) {
           const yt = await searchYouTube(item.name, item.artist)
           const data = { songId: item.id, songName: item.name, artist: item.artist, youtubeId: yt.youtubeId, youtubeUrl: yt.youtubeUrl, playing: true, reason: '', mood: item.mood }
           currentPlayingSong = data
-          return NextResponse.json({ success: true, data })
+          return NextResponse.json({ success: true, data: data as PlayResponse })
         }
         const rec = await getRecommendation(getWeather())
-        return NextResponse.json({ success: true, data: { songId: rec.songId, songName: rec.songName, artist: rec.artist, youtubeId: rec.youtubeId, youtubeUrl: rec.youtubeUrl, playing: true, reason: rec.reason, mood: rec.mood } })
+        return NextResponse.json({ success: true, data: { songId: rec.songId, songName: rec.songName, artist: rec.artist, youtubeId: rec.youtubeId, youtubeUrl: rec.youtubeUrl, playing: true, reason: rec.reason, mood: rec.mood } as PlayResponse })
       }
       case 'next': {
-        if (excludeIds !== undefined && !Array.isArray(excludeIds)) {
-          return NextResponse.json(safeError('Invalid excludeIds', 400), { status: 400 })
-        }
-        const excludes = excludeIds || []
+        const excludes = (excludeIds as string[]) || []
         return NextResponse.json({ success: true, data: await getRecommendation(getWeather(), excludes) })
       }
       case 'chat': {
-        if (message !== undefined && typeof message !== 'string') {
-          return NextResponse.json(safeError('Invalid message format', 400), { status: 400 })
-        }
         const currentSong = getCurrentPlayingSong()
         const weather = getWeather()
         const hour = new Date().getHours()
         const timeDesc = hour < 12 ? '上午' : hour < 18 ? '下午' : '夜晚'
 
         let reply = ''
+        const MINIMAX_API_KEY = getMiniMaxKey()
         if (MINIMAX_API_KEY) {
           const messages: Array<{role: string; content: string}> = [
             { role: 'system', content: `你是 AIDJ 电台的 AI DJ 主持人。你性格温暖、幽默、像真实电台 DJ。当前时间：${timeDesc}，天气：${weather.description}，${weather.temperature}度。如果有正在播放的歌曲，你要能讲解这首歌的背景、风格、甚至分享一些有趣的音乐知识。回复要自然、简短（50字左右）、像朋友聊天一样。` },
-            { role: 'user', content: message || '你好' }
+            { role: 'user', content: (message as string) || '你好' }
           ]
           reply = await miniMaxChat(messages)
         }
@@ -332,11 +420,12 @@ export async function POST(request: NextRequest) {
         }
 
         const audioBase64 = await generateMiniMaxTTS(reply)
-        return NextResponse.json({ success: true, data: { reply, audio: audioBase64 } })
+        return NextResponse.json({ success: true, data: { reply, audio: audioBase64 } as ChatResponse })
       }
       default: return NextResponse.json(safeError('Unknown action', 400), { status: 400 })
     }
-  } catch {
+  } catch (err) {
+    Sentry.captureException(err, { contexts: { route: { path: '/api/aidj', method: 'POST' } } })
     return NextResponse.json(safeError('Service temporarily unavailable', 500), { status: 500 })
   }
 }

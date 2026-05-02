@@ -49,8 +49,17 @@ body {
    ============================================ */
 
 /* Primary ambient light - behind clock */
-.ambient-light-primary {
+.ambient-light-wrapper {
   position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ambient-light-primary {
+  position: absolute;
   width: 600px;
   height: 600px;
   border-radius: 50%;
@@ -60,11 +69,8 @@ body {
     rgba(0, 245, 255, 0.04) 30%,
     transparent 70%
   );
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -60%);
-  pointer-events: none;
-  z-index: 0;
+  top: 0;
+  left: 0;
   animation: ambient-breathe 8s ease-in-out infinite;
 }
 
@@ -108,11 +114,11 @@ body {
 @keyframes ambient-breathe {
   0%, 100% {
     opacity: 0.6;
-    transform: translate(-50%, -60%) scale(1);
+    transform: scale(1);
   }
   50% {
     opacity: 1;
-    transform: translate(-50%, -60%) scale(1.1);
+    transform: scale(1.1);
   }
 }
 
@@ -689,4 +695,332 @@ body::after {
 
 .weather-icon {
   opacity: 0.5;
+}
+
+/* ============================================
+   SKELETON LOADING
+   ============================================ */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 25%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0.02) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-text {
+  height: 16px;
+  margin-bottom: 8px;
+}
+
+.skeleton-text.title {
+  height: 20px;
+  width: 75%;
+}
+
+.skeleton-text.subtitle {
+  height: 14px;
+  width: 50%;
+}
+
+.skeleton-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+
+.toast-container {
+  position: fixed;
+  top: max(24px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.toast {
+  background: rgba(10, 10, 18, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(244, 114, 182, 0.3);
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 240px;
+  max-width: 400px;
+  pointer-events: auto;
+  animation: toast-in 0.4s ease-out forwards;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.toast.toast-exit {
+  animation: toast-out 0.3s ease-in forwards;
+}
+
+.toast-error {
+  border-color: rgba(244, 114, 182, 0.4);
+}
+
+.toast-warning {
+  border-color: rgba(255, 200, 87, 0.4);
+}
+
+.toast-success {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.toast-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.toast-message {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  margin-left: auto;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+
+/* ============================================
+   SONG TRANSITION
+   ============================================ */
+
+.song-info {
+  transition: all 0.3s ease;
+}
+
+.song-info.transitioning {
+  opacity: 0.5;
+}
+
+.song-title {
+  transition: all 0.3s ease;
+}
+
+.song-title.changing {
+  animation: song-change 0.5s ease-out;
+}
+
+@keyframes song-change {
+  0% { opacity: 1; transform: translateY(0); }
+  50% { opacity: 0; transform: translateY(-8px); }
+  51% { transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
+   PLAY BUTTON ANIMATION
+   ============================================ */
+
+.play-btn-icon {
+  transition: transform 0.2s ease;
+}
+
+.play-btn-icon:hover {
+  transform: scale(1.05);
+}
+
+.play-btn-icon:active {
+  transform: scale(0.95);
+}
+
+/* ============================================
+   THINKING INDICATOR
+   ============================================ */
+
+.thinking-dots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--neon-purple);
+  opacity: 0.6;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(1) { animation-delay: 0s; }
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinking-bounce {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.9;
+  }
+}
+
+/* ============================================
+   DISABLED STATE STYLES
+   ============================================ */
+
+.control-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.control-btn:disabled:hover {
+  background: transparent;
+  transform: none;
+}
+
+.control-btn-play:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.control-btn-play:disabled:hover {
+  box-shadow: none;
+}
+
+/* ============================================
+   FADE TRANSITIONS
+   ============================================ */
+
+.fade-enter {
+  opacity: 0;
+}
+
+.fade-enter-active {
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.fade-exit {
+  opacity: 1;
+}
+
+.fade-exit-active {
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+/* ============================================
+   LOADING SPINNER
+   ============================================ */
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(168, 85, 247, 0.2);
+  border-top-color: var(--neon-purple);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   ACTIVE PLAYLIST ITEM GLOW
+   ============================================ */
+
+.playlist-item.active {
+  background: rgba(168, 85, 247, 0.06);
+  position: relative;
+}
+
+.playlist-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    var(--neon-purple),
+    var(--neon-cyan)
+  );
+  border-radius: 1px;
+}
+
+/* ============================================
+   WEATHER LOADING
+   ============================================ */
+
+.weather-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weather-skeleton-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.weather-skeleton-text {
+  width: 32px;
+  height: 14px;
 }
